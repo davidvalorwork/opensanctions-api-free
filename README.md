@@ -211,6 +211,24 @@ Modo desarrollo (reinicio automático):
 npm run dev
 ```
 
+### Integración en otras aplicaciones
+
+Puedes integrar esta API en cualquier aplicación que haga peticiones HTTP. Por ejemplo, en JavaScript:
+
+```js
+const res = await fetch('http://localhost:3000/search?q=Behrouz');
+const data = await res.json();
+console.log(data.results);
+```
+
+### Schemas de respuesta posibles
+
+El campo `schema` de cada resultado indica el tipo de entidad Follow the Money que se ha encontrado. Los valores que puede devolver la API (según los datos de Open Sanctions) incluyen, entre otros:
+
+`Address`, `Airplane`, `Analyzable`, `Article`, `Asset`, `Associate`, `Audio`, `BankAccount`, `Call`, `CallForTenders`, `CourtCaseParty`, `Company`, `Contract`, `ContractAward`, `CourtCase`, `CryptoWallet`, `EconomicActivity`, `Debt`, `Directorship`, `Pages`, `Documentation`, `Email`, `Employment`, `Event`, `Family`, `Document`, `Folder`, `Identification`, `Image`, `Interest`, `Interval`, `LegalEntity`, `License`, `Membership`, `Mention`, `Message`, `Note`, `Occupancy`, `Organization`, `UnknownLink`, `Ownership`, `Package`, `Page`, `Passport`, `Payment`, `Person`, `Position`, `Project`, `ProjectParticipant`, `PublicBody`, `RealEstate`, `Representation`, `Risk`, `Sanction`, `Security`, `Similar`, `Succession`, `Table`, `TaxRoll`, `PlainText`, `Thing`, `Trip`, `UserAccount`, `Value`, `Vehicle`, `Vessel`, `Video`, `HyperText`, `Workbook`.
+
+Cada schema define un conjunto distinto de propiedades posibles dentro de `properties`. Para más detalle puedes consultar la documentación oficial de Follow the Money.
+
 Variables de entorno:
 
 | Variable     | Descripción           | Por defecto              |
