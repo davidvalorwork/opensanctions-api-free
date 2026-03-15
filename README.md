@@ -245,6 +245,35 @@ Variables de entorno:
 | `MONGO_DB`  | Base de datos         | `opensanctions`           |
 | `PORT`      | Puerto HTTP           | `3000`                    |
 
+### Docker (producción)
+
+La imagen escucha en el puerto **80** y **requiere** `MONGO_URI` en producción (no usa localhost dentro del contenedor).
+
+**Construir imagen:**
+
+```bash
+docker build -t opensanctions-api .
+```
+
+**Ejecutar (Mongo en el host, puerto 27017):**
+
+```bash
+docker run -d -p 45001:80 \
+  --add-host=host.docker.internal:host-gateway \
+  -e MONGO_URI=mongodb://host.docker.internal:27017 \
+  opensanctions-api
+```
+
+**Si MongoDB es otro contenedor en la misma red Docker:**
+
+```bash
+docker run -d -p 45001:80 --network mi-red \
+  -e MONGO_URI=mongodb://mongo:27017 \
+  opensanctions-api
+```
+
+Opcional: `-e MONGO_DB=analytikoDB3` si usas otra base.
+
 ---
 
 ## 5. Pruebas de búsqueda
