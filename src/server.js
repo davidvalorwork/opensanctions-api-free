@@ -1,64 +1,20 @@
 /**
- * API sencilla para búsqueda en datos Open Sanctions.
- * Compara el input con cada valor en properties de cada entidad y devuelve
- * los objetos en el formato especificado: id, caption, datasets, schema, first_seen, last_change, properties.
+ * Punto de entrada HTTP (adaptador web) para la API de búsqueda OpenSanctions.
+ * Orquesta Express + caso de uso de búsqueda + acceso a MongoDB (estilo hexagonal).
  */
 
 const express = require('express');
-const { MongoClient } = require('mongodb');
 require('dotenv').config();
+
+const { connectDb, getCollection } = require('./infrastructure/mongo');
+const { searchEntities } = require('./application/searchService');
+const { COLLECTIONS, DEFAULT_PORT } = require('./constants');
 
 const app = express();
 app.use(express.json());
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017';
-const DB_NAME = process.env.MONGO_DB || 'opensanctions';
-const COLLECTION_NAME = 'entities';
-const PORT = process.env.PORT || 3000;
-
-let db = null;
-let client = null;
-
-async function connectDb() {
-  client = new MongoClient(MONGO_URI);
-  await client.connect();
-  db = client.db(DB_NAME);
-}
-
-/**
- * Formatea una entidad al formato de respuesta requerido:
- * id, caption, datasets, schema, first_seen, last_change, properties
- */
-function toResultFormat(doc) {
-  return {
-    id: doc.id,
-    caption: doc.caption,
-    datasets: doc.datasets || [],
-    schema: doc.schema,
-    first_seen: doc.first_seen,
-    last_change: doc.last_change,
-    properties: doc.properties || {},
-  };
-}
-
-/** Escapa caracteres especiales para usar el input en una regex segura. */
-function escapeRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * Búsqueda: por cada dataset, por cada objeto, se compara el input con cada valor
- * en properties. Coincidencia = el texto de búsqueda aparece (substring) en algún valor.
- * Se usa el campo searchableText (índice normal) con $regex para coincidencia parcial.
- */
-async function runSearch(collection, q) {
-  const regex = new RegExp(escapeRegex(q), 'i');
-  const cursor = collection.find(
-    { searchableText: regex },
-    { projection: { searchableText: 0, _sourceFile: 0 } }
-  );
-  return cursor.toArray();
-}
+const COLLECTION_NAME = COLLECTIONS.ENTITIES;
+const PORT = DEFAULT_PORT;
 
 app.get('/search', async (req, res) => {
   const q = (req.query.q ?? req.query.query ?? '').trim();
@@ -70,10 +26,9 @@ app.get('/search', async (req, res) => {
   }
 
   try {
-    const collection = db.collection(COLLECTION_NAME);
-    const docs = await runSearch(collection, q);
-    const results = docs.map(toResultFormat);
-    res.json({ count: results.length, results });
+    const collection = getCollection(COLLECTION_NAME);
+    const result = await searchEntities(collection, q);
+    res.json(result);
   } catch (err) {
     console.error('Error en búsqueda:', err);
     res.status(500).json({ error: 'Error interno en la búsqueda', detail: err.message });
@@ -90,10 +45,9 @@ app.post('/search', async (req, res) => {
   }
 
   try {
-    const collection = db.collection(COLLECTION_NAME);
-    const docs = await runSearch(collection, q);
-    const results = docs.map(toResultFormat);
-    res.json({ count: results.length, results });
+    const collection = getCollection(COLLECTION_NAME);
+    const result = await searchEntities(collection, q);
+    res.json(result);
   } catch (err) {
     console.error('Error en búsqueda:', err);
     res.status(500).json({ error: 'Error interno en la búsqueda', detail: err.message });
@@ -101,7 +55,14 @@ app.post('/search', async (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', db: db ? 'connected' : 'disconnected' });
+  let dbStatus = 'disconnected';
+  try {
+    getCollection(COLLECTION_NAME);
+    dbStatus = 'connected';
+  } catch {
+    dbStatus = 'disconnected';
+  }
+  res.json({ status: 'ok', db: dbStatus });
 });
 
 async function main() {

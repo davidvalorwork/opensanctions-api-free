@@ -5,7 +5,9 @@
  */
 
 require('dotenv').config();
-const { MongoClient } = require('mongodb');
+const { connectDb, getCollection } = require('../src/infrastructure/mongo');
+const { searchEntities } = require('../src/application/searchService');
+const { COLLECTIONS } = require('../src/constants');
 
 // ============== CONFIGURA AQUÍ TUS PRUEBAS ==============
 const CONFIG = {
@@ -29,61 +31,39 @@ const CONFIG = {
 };
 // =======================================================
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017';
-const MONGO_DB = process.env.MONGO_DB || 'opensanctions';
-const COLLECTION_NAME = 'entities';
-
-function escapeRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function toResultFormat(doc) {
-  return {
-    id: doc.id,
-    caption: doc.caption,
-    datasets: doc.datasets || [],
-    schema: doc.schema,
-    first_seen: doc.first_seen,
-    last_change: doc.last_change,
-    properties: doc.properties || {},
-  };
-}
-
-function buildQuery(searchQuery, searchType) {
-  const q = searchQuery.trim();
-  if (!q) return null;
-
-  const escaped = escapeRegex(q);
-  if (searchType === 'exact') {
-    // Palabra completa (el texto aparece como palabra, no como parte de otra)
-    return new RegExp(`\\b${escaped}\\b`, 'i');
-  }
-  if (searchType === 'starts') {
-    // El texto concatenado empieza por la búsqueda (o un valor empieza por ella)
-    return new RegExp(`(^|\\s)${escaped}`, 'i');
-  }
-  // substring (default): el texto aparece en cualquier parte
-  return new RegExp(escaped, 'i');
-}
-
+const COLLECTION_NAME = COLLECTIONS.ENTITIES;
 async function searchInDb() {
-  const client = new MongoClient(MONGO_URI);
-  await client.connect();
-  const collection = client.db(MONGO_DB).collection(COLLECTION_NAME);
-  const regex = buildQuery(CONFIG.searchQuery, CONFIG.searchType);
-  if (!regex) {
+  const q = CONFIG.searchQuery.trim();
+  if (!q) {
     console.log('searchQuery está vacío. Edita CONFIG.searchQuery en el script.');
-    await client.close();
     return;
   }
 
-  const cursor = collection.find(
-    { searchableText: regex },
-    { projection: { searchableText: 0, _sourceFile: 0 } }
-  );
-  const docs = await cursor.toArray();
-  await client.close();
-  return docs.map(toResultFormat);
+  await connectDb();
+  const collection = getCollection(COLLECTION_NAME);
+  const { results } = await searchEntities(collection, q);
+  return results;
+}
+
+// Test específico: búsqueda directa por id exacto contra MongoDB.
+// Útil para comprobar que los documentos están presentes y ver el formato de salida.
+const TEST_ID = 'Q20015585';
+
+async function testSearchById() {
+  await connectDb();
+  const collection = getCollection(COLLECTION_NAME);
+  const { results } = await searchEntities(collection, TEST_ID);
+  const doc = results[0];
+
+  console.log('\n======== TEST BÚSQUEDA POR ID ========');
+  console.log(`id: ${TEST_ID}`);
+  if (!doc) {
+    console.log('No se encontró ningún documento con ese id. Revisa que hayas ejecutado "npm run migrate".');
+  } else {
+    console.log('Documento encontrado (formato enriquecido por la API):');
+    console.log(JSON.stringify(doc, null, 2));
+  }
+  console.log('======================================\n');
 }
 
 async function searchViaApi() {
@@ -131,6 +111,10 @@ async function main() {
     }
 
     printOutput(results);
+
+    // Además de la búsqueda principal, ejecutamos un test dedicado de búsqueda por id.
+    // Puedes cambiar TEST_ID arriba si quieres probar otros identificadores.
+    await testSearchById();
   } catch (err) {
     console.error('Error:', err.message);
     if (CONFIG.target === 'api') {

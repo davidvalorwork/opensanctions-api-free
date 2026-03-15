@@ -63,8 +63,10 @@ Proyecto que migra los datos Open Sanctions (formato Follow the Money) desde arc
 ## 2. Reglas de búsqueda (especificación)
 
 - El **input** de búsqueda es un **string**, con el mayor límite de longitud que se desee soportar.
-- Por cada **data set**, por cada **objeto** (entidad), el input se compara con **cada valor** de cada par clave-valor del objeto anidado **`properties`**.
-- Cuando hay **coincidencia** (el input aparece en algún valor de `properties`), se toma del objeto los pares:
+- Por cada **data set**, por cada **objeto** (entidad), el input se compara:
+  - Con **cada valor** de cada par clave-valor del objeto anidado **`properties`** (vía el campo auxiliar `searchableText`).
+  - Con el valor del propio campo **`id`** de la entidad (coincidencias parciales o exactas).
+- Cuando hay **coincidencia** (el input aparece en algún valor de `properties` o en `id`), se toma del objeto los pares:
   - `id`
   - `caption`
   - `datasets`
@@ -73,7 +75,7 @@ Proyecto que migra los datos Open Sanctions (formato Follow the Money) desde arc
   - `last_change`
   - Todos los pares clave-valor dentro de **`properties`**
 
-y se arma un **objeto de respuesta** con este formato:
+y se arma un **objeto de respuesta base** con este formato:
 
 ```json
 {
@@ -92,33 +94,53 @@ y se arma un **objeto de respuesta** con este formato:
 ```
 
 ### Ejemplo de respuesta de la API
+La API implementa una versión extendida inspirada en el “Prompt Maestro v4.0”, añadiendo:
+
+- Un campo de enlace directo a OpenSanctions: `OpenSancUrl`.
+- Un bloque de metadatos de sanciones: `sanctions_metadata`.
+- Un bloque de relaciones de primer nivel: `relationships` (grafo básico FtM).
+
+Ejemplo de respuesta de la API para una entidad (campos ilustrativos):
 
 ```json
 {
-  "id": "NK-5vaKAsud8hFMsyUSjZCv8r",
-  "caption": "Behrouz Parsarad",
-  "datasets": ["us_ofac_sdn"],
-  "schema": "Person",
-  "first_seen": "2025-03-04T16:17:34",
-  "last_change": "2025-06-02T12:10:03",
-  "properties": {
-    "firstName": ["Behrouz", "بهروز"],
-    "gender": ["male"],
-    "email": ["lazyyytrader@gmail.com", "behrouz.p1985@gmail.com", "..."],
-    "lastName": ["Parsarad", "پارسا", "..."],
-    "nationality": ["ir"],
-    "name": ["بهروز پارسا راد", "Behrouz Parsarad"],
-    "birthDate": ["1988-07-02"],
-    "phone": ["+989334445690", "..."],
-    "sourceUrl": ["https://sanctionssearch.ofac.treas.gov/Details.aspx?id=53033"],
-    "addressEntity": ["addr-8569058f35b3be17561e003582e3a15bbaba8aea"],
-    "passportNumber": ["M56769976"],
-    "address": ["No. 18, No. 8, Bahar, Shahid Bakhtiari St., Tohid Ave., Tehran"],
-    "alias": ["Behrouz Parsa", "بهروز پارسا", "..."],
-    "topics": ["sanction"],
-    "country": ["ir"],
-    "programId": ["US-NARCO"]
-  }
+  "count": 1,
+  "results": [
+    {
+      "id": "NK-5vaKAsud8hFMsyUSjZCv8r",
+      "OpenSancUrl": "https://www.opensanctions.org/entities/NK-5vaKAsud8hFMsyUSjZCv8r/",
+      "caption": "Behrouz Parsarad",
+      "datasets": ["us_ofac_sdn"],
+      "schema": "Person",
+      "first_seen": "2025-03-04T16:17:34",
+      "last_change": "2025-06-02T12:10:03",
+      "properties": {
+        "firstName": ["Behrouz", "بهروز"],
+        "gender": ["male"],
+        "email": ["lazyyytrader@gmail.com", "behrouz.p1985@gmail.com", "..."],
+        "lastName": ["Parsarad", "پارسا", "..."],
+        "nationality": ["ir"],
+        "name": ["بهروز پارسا راد", "Behrouz Parsarad"],
+        "birthDate": ["1988-07-02"],
+        "phone": ["+989334445690", "..."],
+        "sourceUrl": ["https://sanctionssearch.ofac.treas.gov/Details.aspx?id=53033"],
+        "addressEntity": ["addr-8569058f35b3be17561e003582e3a15bbaba8aea"],
+        "passportNumber": ["M56769976"],
+        "address": ["No. 18, No. 8, Bahar, Shahid Bakhtiari St., Tohid Ave., Tehran"],
+        "alias": ["Behrouz Parsa", "بهروز پارسا", "..."],
+        "topics": ["sanction"],
+        "country": ["ir"],
+        "programId": ["US-NARCO"]
+      },
+      "sanctions_metadata": {
+        "is_sanctioned": true,
+        "programs": ["US-NARCO"],
+        "authorities": [],
+        "reasons": ["Entidad listada en dataset(s) de sanciones o con topic \"sanction\"."]
+      },
+      "relationships": []
+    }
+  ]
 }
 ```
 
@@ -154,7 +176,10 @@ Variables de entorno usadas:
 ## 4. API (Node.js)
 
 - **Servidor:** Express.
-- **Búsqueda:** Compara el string de búsqueda con los valores de `properties` (vía el campo `searchableText`); si el input aparece en algún valor, la entidad se incluye en la respuesta con el formato indicado arriba.
+- **Búsqueda:** Compara el string de búsqueda:
+  - Con los valores de `properties` (vía el campo `searchableText`).
+  - Con el campo `id` de la entidad (coincidencias parciales o exactas).
+  Si el input aparece en alguno de estos, la entidad se incluye en la respuesta con el formato extendido indicado arriba (`OpenSancUrl`, `sanctions_metadata`, `relationships`).
 
 ### Endpoints
 
@@ -179,24 +204,7 @@ curl "http://localhost:3000/search?query=OFAC"
 curl -X POST http://localhost:3000/search -H "Content-Type: application/json" -d "{\"q\": \"Parsarad\"}"
 ```
 
-**Respuesta típica:**
-
-```json
-{
-  "count": 1,
-  "results": [
-    {
-      "id": "NK-5vaKAsud8hFMsyUSjZCv8r",
-      "caption": "Behrouz Parsarad",
-      "datasets": ["us_ofac_sdn"],
-      "schema": "Person",
-      "first_seen": "2025-03-04T16:17:34",
-      "last_change": "2025-06-02T12:10:03",
-      "properties": { ... }
-    }
-  ]
-}
-```
+**Respuesta típica (ver ejemplo detallado más arriba en la sección 2):** la API devuelve `count` y un array `results` con cada entidad en el formato enriquecido (`OpenSancUrl`, `sanctions_metadata`, `relationships`).
 
 ### Arranque de la API
 
@@ -241,7 +249,10 @@ Variables de entorno:
 
 ## 5. Pruebas de búsqueda
 
-El script `scripts/test-search.js` prueba la búsqueda contra la base de datos (o contra la API) con parámetros que puedes cambiar fácilmente.
+El script `scripts/test-search.js` prueba la búsqueda contra la base de datos (o contra la API) con parámetros que puedes cambiar fácilmente, incluyendo ahora:
+
+- Búsqueda por texto libre sobre `properties` y `id`.
+- Un pequeño test específico de búsqueda directa por `id`.
 
 ### Cómo ejecutar
 
@@ -257,13 +268,15 @@ Abre `scripts/test-search.js` y modifica el objeto **CONFIG** al inicio:
 
 | Parámetro      | Descripción |
 |----------------|-------------|
-| `searchQuery`  | Texto a buscar (ej. `"Behrouz"`, `"Venezuela"`, `"OFAC"`, `"us_ofac_sdn"`). |
+| `searchQuery`  | Texto a buscar (ej. `"Behrouz"`, `"Venezuela"`, `"OFAC"`, `"us_ofac_sdn"`, `"Q20015585"`). |
 | `searchType`   | `'substring'` = aparece en cualquier parte (por defecto). `'exact'` = palabra completa. `'starts'` = empieza por el texto. |
 | `limit`        | Cuántos resultados imprimir (`0` = todos). |
 | `target`       | `'db'` = consulta MongoDB directo. `'api'` = llama al servidor HTTP (debe estar levantado). |
 | `apiBaseUrl`   | Solo si `target === 'api'` (ej. `http://localhost:3000`). |
 
-Ejemplos de búsquedas para probar con tu data: nombres (`Behrouz`, `Parsarad`), países (`ir`, `ve`), datasets (`us_ofac_sdn`, `ve_asamblea_nacional`), temas (`sanction`, `role.pep`).
+Además, al final de la ejecución se realiza un **test dedicado de búsqueda por id** (constante `TEST_ID` en el script) para comprobar rápidamente que una entidad concreta está presente en la base.
+
+Ejemplos de búsquedas para probar con tu data: nombres (`Behrouz`, `Parsarad`), países (`ir`, `ve`), datasets (`us_ofac_sdn`, `ve_asamblea_nacional`), temas (`sanction`, `role.pep`), identificadores (`Q20015585`, `ve-asamblea-...`).
 
 ---
 
@@ -294,8 +307,8 @@ opensanctions/
 |--------|-----------------|
 | **Input de búsqueda** | String, longitud máxima flexible. |
 | **Alcance** | Por data set, por objeto (entidad). |
-| **Criterio de match** | El input se compara con cada valor de cada par en `properties`; hay coincidencia si el texto aparece en algún valor. |
-| **Formato de respuesta** | Objeto con `id`, `caption`, `datasets`, `schema`, `first_seen`, `last_change`, `properties`. |
+| **Criterio de match** | El input se compara con cada valor de cada par en `properties` (vía `searchableText`) y también con el campo `id`; hay coincidencia si el texto aparece en alguno de ellos. |
+| **Formato de respuesta** | Objeto con `id`, `OpenSancUrl`, `caption`, `datasets`, `schema`, `first_seen`, `last_change`, `properties`, `sanctions_metadata`, `relationships`. |
 | **Origen de datos** | Archivos JSON (NDJSON) en `datajson/`. |
 | **Persistencia** | MongoDB; migración vía `npm run migrate`. |
 | **API** | Node.js + Express; GET/POST `/search`, GET `/health`. |
