@@ -27,14 +27,30 @@ echo "  URI: $MONGO_URI"
 echo "  DB : $MONGO_DB"
 echo "  Destino: $BACKUP_DIR"
 
+USE_DOCKER=false
 if ! command -v mongodump >/dev/null 2>&1; then
-  echo "ERROR: no se encontró 'mongodump' en el PATH."
-  echo "Instala las MongoDB Database Tools y asegúrate de que 'mongodump' esté disponible."
-  exit 1
+  echo "mongodump local no encontrado. Comprobando si el contenedor refactor-grafo-mongodb-dev está en ejecución..."
+  if docker ps --format '{{.Names}}' | grep -q 'refactor-grafo-mongodb-dev'; then
+    echo "Contenedor detectado. Se usará mongodump desde Docker."
+    USE_DOCKER=true
+  else
+    echo "ERROR: no se encontró 'mongodump' en el PATH."
+    echo "Instala las MongoDB Database Tools y asegúrate de que 'mongodump' esté disponible."
+    exit 1
+  fi
 fi
 
-mongodump --uri="$MONGO_URI" --db="$MONGO_DB" --out="$BACKUP_DIR"
+if [ "$USE_DOCKER" = "true" ]; then
+  # La ruta dentro del contenedor /opensanctions_backups está mapeada a ../opensanctions/backups
+  DOCKER_OUT_DIR="/opensanctions_backups/${MONGO_DB}-${TIMESTAMP}"
+  docker exec refactor-grafo-mongodb-dev mongodump \
+    --uri="mongodb://localhost:27017" \
+    --db="$MONGO_DB" \
+    --out="$DOCKER_OUT_DIR"
+else
+  mkdir -p "$BACKUP_DIR"
+  mongodump --uri="$MONGO_URI" --db="$MONGO_DB" --out="$BACKUP_DIR"
+fi
 
 echo "Backup completado."
 echo "Archivos guardados en: $BACKUP_DIR"
-
