@@ -13,7 +13,7 @@ const COLLECTIONS = {
 };
 
 // Puerto HTTP por defecto
-const DEFAULT_PORT = process.env.PORT || 80;
+const DEFAULT_PORT = process.env.PORT || 5001;
 
 /**
  * Schemas que representan vínculos (edges) en el grafo FtM.
