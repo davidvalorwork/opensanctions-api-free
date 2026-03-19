@@ -11,7 +11,7 @@ COPY . .
 
 # Producción: escuchar en 80 para mapeo -p 45001:80. MONGO_URI se pasa al ejecutar el contenedor.
 ENV NODE_ENV=production
-ENV MONGO_URI=mongodb://136.112.135.115/27017
+ENV MONGO_URI=mongodb://34.46.169.192/27017
 ENV PORT=80
 
 EXPOSE 80

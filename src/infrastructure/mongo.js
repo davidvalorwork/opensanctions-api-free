@@ -12,7 +12,7 @@ const { DEFAULT_DB_NAME } = require('../constants');
 
 // En producción MONGO_URI debe pasarse al contenedor (ej. -e MONGO_URI=mongodb://host.docker.internal:27017)
 const MONGO_URI = (() => {
-  const uri = process.env.MONGO_URI || (process.env.NODE_ENV === 'production' ? 'http://136.112.135.115/27017' : 'mongodb://localhost:27017');
+  const uri = process.env.MONGO_URI || (process.env.NODE_ENV === 'production' ? 'http://34.46.169.192/27017' : 'mongodb://localhost:27017');
   if (!uri && process.env.NODE_ENV === 'production') {
     throw new Error(
       'En producción defina MONGO_URI al ejecutar el contenedor (ej. -e MONGO_URI=mongodb://host.docker.internal:27017 o -e MONGO_URI=mongodb://mongo:27017)'

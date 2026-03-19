@@ -15,7 +15,7 @@ echo "==================================================="
 
 # 1. Build the Docker image
 echo -e "\n[1/3] Building the Docker image..."
-docker build -t "$IMAGE_NAME" .
+docker build --platform linux/amd64 -t "$IMAGE_NAME" .
 
 # Check if build was successful
 if [ $? -ne 0 ]; then
