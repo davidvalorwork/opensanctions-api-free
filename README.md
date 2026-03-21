@@ -64,9 +64,10 @@ Proyecto que migra los datos Open Sanctions (formato Follow the Money) desde arc
 
 - El **input** de búsqueda es un **string**, con el mayor límite de longitud que se desee soportar.
 - Por cada **data set**, por cada **objeto** (entidad), el input se compara:
-  - Con **cada valor** de cada par clave-valor del objeto anidado **`properties`** (vía el campo auxiliar `searchableText`).
-  - Con el valor del propio campo **`id`** de la entidad (coincidencias parciales o exactas).
-- Cuando hay **coincidencia** (el input aparece en algún valor de `properties` o en `id`), se toma del objeto los pares:
+  - Modo **full**: con **cada valor** de cada par clave-valor del objeto anidado **`properties`** (vía el campo auxiliar `searchableText`).
+  - Modo **lite**: con el campo **`caption`**.
+  - En ambos modos: con el valor del propio campo **`id`** de la entidad (coincidencias parciales o exactas).
+- Cuando hay **coincidencia** (según el modo: `searchableText`/`properties` en full o `caption` en lite, y además `id`), se toma del objeto los pares:
   - `id`
   - `caption`
   - `datasets`
@@ -150,7 +151,7 @@ Ejemplo de respuesta de la API para una entidad (campos ilustrativos):
 
 - **Ubicación:** `scripts/migrate.js`
 - **Función:** Lee todos los archivos `.json` en la carpeta `datajson/` (formato NDJSON: una línea = un objeto JSON por entidad), y los inserta/actualiza en MongoDB.
-- **Campo auxiliar:** Para cada documento se genera un campo `searchableText` que concatena todos los valores de `properties` (aplanados), para que la API pueda buscar por coincidencia de substring sobre un solo campo.
+- **Campo auxiliar:** Para cada documento se genera un campo `searchableText` que concatena todos los valores de `properties` (aplanados), para que la API pueda buscar por coincidencia de substring sobre un solo campo (en modo **full**).
 - **Colección:** Por defecto `entities` en la base configurada en `MONGO_DB`.
 
 ### Cómo ejecutar la migración
@@ -177,8 +178,9 @@ Variables de entorno usadas:
 
 - **Servidor:** Express.
 - **Búsqueda:** Compara el string de búsqueda:
-  - Con los valores de `properties` (vía el campo `searchableText`).
-  - Con el campo `id` de la entidad (coincidencias parciales o exactas).
+  - En modo **full**: con los valores de `properties` (vía el campo `searchableText`).
+  - En modo **lite**: con el campo `caption`.
+  - En ambos modos: con el campo `id` de la entidad (coincidencias parciales o exactas).
   Si el input aparece en alguno de estos, la entidad se incluye en la respuesta con el formato extendido indicado arriba (`OpenSancUrl`, `sanctions_metadata`, `relationships`).
 
 ### Endpoints
@@ -244,6 +246,7 @@ Variables de entorno:
 | `MONGO_URI` | URI MongoDB           | `mongodb://localhost:27017` |
 | `MONGO_DB`  | Base de datos         | `opensanctions`           |
 | `PORT`      | Puerto HTTP           | `3000`                    |
+| `OPENSANCTIONS_SEARCH_LITE` | Activa modo lite (solo `caption` y `id`) | `true` (en Docker) |
 
 ### Docker (producción)
 
@@ -336,7 +339,7 @@ opensanctions/
 |--------|-----------------|
 | **Input de búsqueda** | String, longitud máxima flexible. |
 | **Alcance** | Por data set, por objeto (entidad). |
-| **Criterio de match** | El input se compara con cada valor de cada par en `properties` (vía `searchableText`) y también con el campo `id`; hay coincidencia si el texto aparece en alguno de ellos. |
+| **Criterio de match** | En modo full: `properties` (vía `searchableText`) y `id`. En modo lite: `caption` y `id`. Hay coincidencia si el texto aparece en los campos consultados según el modo. |
 | **Formato de respuesta** | Objeto con `id`, `OpenSancUrl`, `caption`, `datasets`, `schema`, `first_seen`, `last_change`, `properties`, `sanctions_metadata`, `relationships`. |
 | **Origen de datos** | Archivos JSON (NDJSON) en `datajson/`. |
 | **Persistencia** | MongoDB; migración vía `npm run migrate`. |
