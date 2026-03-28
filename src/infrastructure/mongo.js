@@ -24,9 +24,20 @@ const MONGO_URI = (() => {
 let client = null;
 let db = null;
 
+function buildMongoClientOptions() {
+  const opts = {};
+  const caFile = process.env.MONGO_TLS_CA_FILE;
+  if (caFile && String(caFile).trim()) {
+    opts.tls = true;
+    opts.tlsCAFile = caFile;
+  }
+  return Object.keys(opts).length ? opts : undefined;
+}
+
 async function connectDb() {
   if (db) return db;
-  client = new MongoClient(MONGO_URI);
+  const extra = buildMongoClientOptions();
+  client = extra ? new MongoClient(MONGO_URI, extra) : new MongoClient(MONGO_URI);
   await client.connect();
   db = client.db(DEFAULT_DB_NAME);
   return db;

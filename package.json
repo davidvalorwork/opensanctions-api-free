@@ -11,16 +11,24 @@
     "compose:test-db": "docker compose -f docker-compose.test.yml up -d",
     "compose:test-db:down": "docker compose -f docker-compose.test.yml down",
     "backup": "bash scripts/backup-db.sh",
-    "restore": "bash scripts/restore-db.sh"
+    "restore": "bash scripts/restore-db.sh",
+    "lambda:deploy": "bash lambda/deploy.sh"
   },
-  "keywords": ["opensanctions", "ftm", "sanciones", "mongodb"],
+  "keywords": [
+    "opensanctions",
+    "ftm",
+    "sanciones",
+    "mongodb"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
+    "@codegenie/serverless-express": "^4.17.1",
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.5",
     "express": "^4.21.0",
-    "mongodb": "^6.10.0",
-    "dotenv": "^16.4.5"
+    "mongodb": "^6.10.0"
   }
 }

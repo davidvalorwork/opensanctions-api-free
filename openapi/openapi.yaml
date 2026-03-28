@@ -1,0 +1,362 @@
+openapi: 3.0.3
+info:
+  title: Open Sanctions Search API
+  description: |
+    Búsqueda de entidades Open Sanctions (Follow the Money) por texto libre sobre `properties`
+    (modo full vía `searchableText`), `caption` y `id` (modo lite). Respuestas enriquecidas con
+    `OpenSancUrl`, `sanctions_metadata` y `relationships`.
+
+    **RapidAPI:** al publicar como API existente, sustituye la URL del servidor en `servers` por
+    la base URL de tu despliegue (Function URL, API Gateway, etc.). Los consumidores vía RapidAPI
+    envían `X-RapidAPI-Key`; si usas `rapid_api=true` y `RAPIDAPI_PROXY_SECRET`, el proxy añade
+    `X-RapidAPI-Proxy-Secret`.
+  version: 1.0.0
+  contact:
+    name: Open Sanctions API
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://{host}
+    description: URL base de tu instancia (reemplaza al importar en RapidAPI)
+    variables:
+      host:
+        default: api.example.com
+        description: Host sin barra final (p. ej. xxx.lambda-url.region.on.aws)
+
+tags:
+  - name: Search
+    description: Búsqueda de entidades sancionadas / PEP
+  - name: Health
+    description: Estado del servicio
+
+# Los consumidores vía RapidAPI envían esta cabecera (RapidAPI la añade automáticamente).
+security:
+  - RapidAPIKey: []
+
+paths:
+  /search:
+    get:
+      tags:
+        - Search
+      summary: Buscar entidades (query string)
+      description: |
+        Coincidencia por subcadena (case-insensitive en la mayoría de campos según configuración del servidor).
+        Acepta `q` o `query` como nombre del parámetro.
+      operationId: searchGet
+      parameters:
+        - name: q
+          in: query
+          description: Texto de búsqueda (preferido)
+          required: false
+          schema:
+            type: string
+            minLength: 1
+          examples:
+            nombre:
+              summary: Por nombre
+              value: Behrouz
+            dataset:
+              summary: Por dataset
+              value: us_ofac_sdn
+            idParcial:
+              summary: Por id parcial
+              value: NK-5vaKAsud
+        - name: query
+          in: query
+          description: Alias de `q`
+          required: false
+          schema:
+            type: string
+            minLength: 1
+          example: OFAC
+      responses:
+        "200":
+          description: Resultados de búsqueda
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+              examples:
+                unaEntidad:
+                  $ref: "#/components/examples/searchSuccessExample"
+                vacio:
+                  summary: Sin coincidencias
+                  value:
+                    count: 0
+                    results: []
+        "400":
+          description: Falta el parámetro de búsqueda
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: Falta el parámetro de búsqueda
+                usage: 'GET /search?q=<texto> o POST /search con body { "q": "<texto>" }'
+        "403":
+          description: Acceso denegado (p. ej. proxy secret RapidAPI incorrecto)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: Error interno en la búsqueda
+                detail: Mensaje de error
+
+    post:
+      tags:
+        - Search
+      summary: Buscar entidades (JSON body)
+      description: |
+        Mismo comportamiento que GET. El cuerpo puede usar `q` o `query`. También se acepta `q` en query string si el body no lo trae.
+      operationId: searchPost
+      parameters:
+        - name: q
+          in: query
+          description: Opcional si el body incluye `q` o `query`
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchRequestBody"
+            examples:
+              basico:
+                summary: Campo q
+                value:
+                  q: Parsarad
+              aliasQuery:
+                summary: Campo query
+                value:
+                  query: Venezuela
+      responses:
+        "200":
+          description: Resultados de búsqueda
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+              examples:
+                unaEntidad:
+                  $ref: "#/components/examples/searchSuccessExample"
+        "400":
+          description: Falta el parámetro de búsqueda
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Acceso denegado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Estado del servicio
+      description: Comprueba que el proceso responde y si la capa de datos está inicializada.
+      operationId: healthGet
+      security: []
+      responses:
+        "200":
+          description: Servicio vivo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              examples:
+                conectado:
+                  summary: Base accesible
+                  value:
+                    status: ok
+                    db: connected
+                desconectado:
+                  summary: Sin conexión a BD
+                  value:
+                    status: ok
+                    db: disconnected
+
+components:
+  securitySchemes:
+    RapidAPIKey:
+      type: apiKey
+      in: header
+      name: X-RapidAPI-Key
+      description: |
+        Clave de suscriptor RapidAPI. En pruebas desde el hub de RapidAPI se envía sola;
+        no hace falta rellenarla manualmente en la consola de RapidAPI.
+
+  schemas:
+    SearchRequestBody:
+      type: object
+      properties:
+        q:
+          type: string
+          description: Texto de búsqueda
+          minLength: 1
+        query:
+          type: string
+          description: Alias de `q`
+          minLength: 1
+      description: Al menos uno de `q` o `query` debe enviarse (o `q` en la query de la URL).
+
+    SearchResponse:
+      type: object
+      required:
+        - count
+        - results
+      properties:
+        count:
+          type: integer
+          minimum: 0
+          description: Número de entidades devueltas en esta respuesta
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntityResult"
+
+    EntityResult:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+        OpenSancUrl:
+          type: string
+          nullable: true
+          format: uri
+        caption:
+          type: string
+          nullable: true
+        datasets:
+          type: array
+          items:
+            type: string
+        schema:
+          type: string
+          description: Schema Follow the Money (p. ej. Person, Company)
+        first_seen:
+          type: string
+          nullable: true
+        last_change:
+          type: string
+          nullable: true
+        properties:
+          type: object
+          additionalProperties: true
+          description: Propiedades FtM; valores suelen ser arrays de strings
+        sanctions_metadata:
+          $ref: "#/components/schemas/SanctionsMetadata"
+        relationships:
+          type: array
+          items:
+            $ref: "#/components/schemas/RelationshipItem"
+
+    SanctionsMetadata:
+      type: object
+      properties:
+        is_sanctioned:
+          type: boolean
+        programs:
+          type: array
+          items:
+            type: string
+        authorities:
+          type: array
+          items:
+            type: string
+        reasons:
+          type: array
+          items:
+            type: string
+
+    RelationshipItem:
+      type: object
+      properties:
+        target_id:
+          type: string
+        target_name:
+          type: string
+        relationship_type:
+          type: string
+        description:
+          type: string
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - db
+      properties:
+        status:
+          type: string
+          example: ok
+        db:
+          type: string
+          enum: [connected, disconnected]
+          description: Estado de la conexión a MongoDB/DocumentDB desde el servidor
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        detail:
+          type: string
+        usage:
+          type: string
+
+  examples:
+    searchSuccessExample:
+      summary: Una persona coincidente (ilustrativo)
+      value:
+        count: 1
+        results:
+          - id: NK-5vaKAsud8hFMsyUSjZCv8r
+            OpenSancUrl: https://www.opensanctions.org/entities/NK-5vaKAsud8hFMsyUSjZCv8r/
+            caption: Behrouz Parsarad
+            datasets:
+              - us_ofac_sdn
+            schema: Person
+            first_seen: "2025-03-04T16:17:34"
+            last_change: "2025-06-02T12:10:03"
+            properties:
+              firstName:
+                - Behrouz
+                - بهروز
+              gender:
+                - male
+              nationality:
+                - ir
+              topics:
+                - sanction
+              programId:
+                - US-NARCO
+            sanctions_metadata:
+              is_sanctioned: true
+              programs:
+                - US-NARCO
+              authorities: []
+              reasons:
+                - Entidad listada en dataset(s) de sanciones o con topic "sanction".
+            relationships: []

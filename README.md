@@ -247,6 +247,49 @@ Variables de entorno:
 | `MONGO_DB`  | Base de datos         | `opensanctions`           |
 | `PORT`      | Puerto HTTP           | `3000`                    |
 | `OPENSANCTIONS_SEARCH_LITE` | Activa modo lite (solo `caption` y `id`) | `true` (en Docker) |
+| `rapid_api` | Modo proveedor RapidAPI: CORS y `trust proxy` (ver abajo) | *(vacío / desactivado)* |
+| `RAPIDAPI_PROXY_SECRET` | Opcional; si se define, valida la cabecera `X-RapidAPI-Proxy-Secret` en `/search` (no en `/health`) | *(vacío)* |
+
+### RapidAPI (publicar la API en RapidAPI)
+
+Si conectas esta API a RapidAPI como **API existente** (Listen / hosting propio), en el `.env` puedes poner:
+
+```env
+rapid_api=true
+```
+
+Con eso se activa:
+
+- **`trust proxy`**: Express confía en la cadena de proxies de RapidAPI (útil para IP y despliegues detrás de su proxy).
+- **CORS**: respuestas compatibles con orígenes que envíe el cliente (p. ej. consola de pruebas de RapidAPI), permitiendo cabeceras habituales (`X-RapidAPI-Key`, `X-RapidAPI-Host`, `X-RapidAPI-Proxy-Secret`, etc.).
+
+Opcionalmente, en el panel de RapidAPI puedes definir un **Proxy Secret**. Si copias el mismo valor en:
+
+```env
+RAPIDAPI_PROXY_SECRET=el_mismo_valor_que_en_el_panel
+```
+
+el servidor comprobará que las peticiones a **`/search`** incluyan la cabecera `X-RapidAPI-Proxy-Secret` con ese valor (RapidAPI la inyecta al llamar a tu URL). **`GET /health` queda exento** para comprobaciones de disponibilidad sin esa cabecera.
+
+Si **`rapid_api` no está definida**, es `false`, o no es uno de `1`, `true`, `yes`, `on`, la API funciona **igual que antes**: sin este CORS ni `trust proxy` adicionales.
+
+Ejemplo al ejecutar el contenedor:
+
+```bash
+docker run -d -p 45001:80 \
+  -e MONGO_URI=mongodb://host.docker.internal:27017 \
+  -e rapid_api=true \
+  -e RAPIDAPI_PROXY_SECRET=tu_secreto_del_panel \
+  opensanctions-api
+```
+
+#### OpenAPI / Swagger para RapidAPI
+
+En **`openapi/openapi.yaml`** hay una especificación **OpenAPI 3.0.3** (formato que RapidAPI acepta al importar) con esquemas, respuestas y **ejemplos** para `GET/POST /search` y `GET /health`.
+
+1. En RapidAPI: crear o editar la API → **Import** → **OpenAPI** → sube o pega el contenido del YAML.
+2. En `servers`, sustituye la variable `host` por el host de tu despliegue (sin `https://` duplicado: la URL del servidor ya lleva esquema en la plantilla).
+3. **`/health`** declara `security: []` para monitorización sin `X-RapidAPI-Key`; el resto de operaciones documentan la cabecera **`X-RapidAPI-Key`** (RapidAPI la inyecta a los clientes del hub).
 
 ### Docker (producción)
 
@@ -284,7 +327,7 @@ Sustituye la URL base por la de tu entorno (host y puerto que hayas publicado). 
 **Búsqueda (GET):**
 
 ```bash
-curl -sS "http://localhost:45001/search?q=Behrouz"
+curl -sS "http://localhost:5001/search?q=Behrouz"
 ```
 
 **Estado del servicio:**
@@ -338,7 +381,19 @@ Ejemplos de búsquedas para probar con tu data: nombres (`Behrouz`, `Parsarad`),
 
 ---
 
-## 6. Estructura del proyecto
+## 6. AWS (Lambda + DocumentDB, opcional)
+
+En la carpeta **`lambda/`** hay un orquestador (`deploy.sh`) y scripts que, con **AWS CLI**, pueden crear un clúster **Amazon DocumentDB** (compatible con MongoDB), restaurar el último backup local y desplegar la API en **AWS Lambda** con **Function URL** pública. Resumen en **`lambda/README.md`**; guía amplia (scripts, VPC, RapidAPI, OpenAPI): **`docs/DESPLIEGUE-AWS-RAPIDAPI.md`**.
+
+```bash
+cp lambda/config.env.example lambda/config.env
+# editar lambda/config.env
+npm run lambda:deploy
+```
+
+---
+
+## 7. Estructura del proyecto
 
 ```
 opensanctions/
@@ -350,8 +405,14 @@ opensanctions/
 │   └── EU Financial Sanctions Files (FSF).json
 ├── scripts/
 │   └── migrate.js               # Script de migración a MongoDB
+├── lambda/                      # Despliegue AWS (DocumentDB, restore, Lambda + URL pública)
+├── docs/
+│   └── DESPLIEGUE-AWS-RAPIDAPI.md  # Guía AWS + RapidAPI
+├── openapi/                     # OpenAPI 3.0 para importar en RapidAPI (Swagger)
 ├── src/
-│   └── server.js                # Servidor Express y lógica de búsqueda
+│   ├── server.js                # Entrada local (Express)
+│   ├── httpApp.js               # App HTTP compartida (local + Lambda)
+│   └── lambda-handler.js        # Entrada AWS Lambda
 ├── .env.example
 ├── package.json
 └── README.md
@@ -359,7 +420,7 @@ opensanctions/
 
 ---
 
-## 7. Resumen de especificaciones
+## 8. Resumen de especificaciones
 
 | Aspecto | Especificación |
 |--------|-----------------|

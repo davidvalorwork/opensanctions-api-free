@@ -3,3 +3,9 @@ node_modules/
 *.log
 .DS_Store
 backups
+
+lambda/config.env
+lambda/.deploy-state
+lambda/.last-docdb-endpoint
+lambda/build/
+lambda/certs/
