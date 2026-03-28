@@ -1,0 +1,9 @@
+# Imagen mínima con mongorestore para el job db-restore en docker-compose.test.yml
+FROM alpine:3.19
+
+RUN apk add --no-cache mongodb-tools
+
+COPY scripts/docker-restore-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

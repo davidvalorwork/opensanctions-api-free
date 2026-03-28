@@ -8,6 +8,8 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "test": "node scripts/test-search.js",
+    "compose:test-db": "docker compose -f docker-compose.test.yml up -d",
+    "compose:test-db:down": "docker compose -f docker-compose.test.yml down",
     "backup": "bash scripts/backup-db.sh",
     "restore": "bash scripts/restore-db.sh"
   },

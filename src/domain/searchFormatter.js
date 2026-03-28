@@ -6,6 +6,8 @@
  * - Ensamblado del objeto de respuesta final para la API / Prompt Maestro.
  */
 
+const { RELATION_SCHEMAS } = require('../constants');
+
 /**
  * Construye el bloque sanctions_metadata según las reglas del Prompt Maestro v4.0.
  */
@@ -66,21 +68,47 @@ function buildSanctionsMetadata(doc) {
   };
 }
 
+function relDocToRelationshipObject(rel) {
+  const props = rel.properties || {};
+  const status = Array.isArray(props.status) ? props.status[0] : undefined;
+  const post = Array.isArray(props.post) ? props.post[0] : undefined;
+
+  const descriptionParts = [];
+  if (status) descriptionParts.push(`status=${status}`);
+  if (post) descriptionParts.push(`post=${post}`);
+
+  return {
+    target_id: rel.id,
+    target_name: rel.caption || rel.schema || 'Related entity',
+    relationship_type: rel.schema || 'Relation',
+    description: descriptionParts.join(', '),
+  };
+}
+
+/** Convierte documentos de relación de Mongo al formato de la API. */
+function relationshipsFromRelDocs(relDocs) {
+  return relDocs.map(relDocToRelationshipObject);
+}
+
 /**
- * Relación de schemas que representan vínculos (edges) en el grafo FtM.
- * Aquí se listan los más comunes; se puede ampliar según necesidad.
+ * Agrupa documentos de relación por cada `properties.holder` (id de entidad).
+ * Sirve para cargar relaciones en una sola consulta en lugar de N queries.
  */
-const RELATION_SCHEMAS = [
-  'Occupancy',
-  'Family',
-  'Ownership',
-  'Directorship',
-  'Membership',
-  'Associate',
-  'Employment',
-  'Position',
-  'Sanction',
-];
+function indexRelationshipDocsByHolder(relDocs) {
+  const map = new Map();
+  for (const rel of relDocs) {
+    const props = rel.properties || {};
+    const holders = props.holder;
+    const list = Array.isArray(holders) ? holders : holders != null ? [holders] : [];
+    for (const h of list) {
+      if (h == null) continue;
+      const key = String(h);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(rel);
+    }
+  }
+  return map;
+}
 
 /**
  * Construye el array relationships para una entidad:
@@ -91,7 +119,9 @@ const RELATION_SCHEMAS = [
  * las relaciones se modelan principalmente como schema "Occupancy"
  * con properties.holder = <id de la persona> y properties.post = <id del cargo>.
  */
-async function buildRelationshipsForEntity(entity, collection) {
+async function buildRelationshipsForEntity(entity, collection, options = {}) {
+  const limit = options.limit ?? 100;
+
   const id = entity.id;
   if (!id) return [];
 
@@ -100,24 +130,10 @@ async function buildRelationshipsForEntity(entity, collection) {
       schema: { $in: RELATION_SCHEMAS },
       'properties.holder': id,
     })
+    .limit(limit)
     .toArray();
 
-  return relDocs.map((rel) => {
-    const props = rel.properties || {};
-    const status = Array.isArray(props.status) ? props.status[0] : undefined;
-    const post = Array.isArray(props.post) ? props.post[0] : undefined;
-
-    const descriptionParts = [];
-    if (status) descriptionParts.push(`status=${status}`);
-    if (post) descriptionParts.push(`post=${post}`);
-
-    return {
-      target_id: rel.id,
-      target_name: rel.caption || rel.schema || 'Related entity',
-      relationship_type: rel.schema || 'Relation',
-      description: descriptionParts.join(', '),
-    };
-  });
+  return relationshipsFromRelDocs(relDocs);
 }
 
 /**
@@ -125,7 +141,10 @@ async function buildRelationshipsForEntity(entity, collection) {
  * id, OpenSancUrl, caption, datasets, schema, first_seen, last_change, properties,
  * sanctions_metadata, relationships.
  */
-async function formatEntity(doc, collection) {
+/**
+ * @param preloadedRelDocs Si se pasa un array (puede estar vacío), no se consulta Mongo por relaciones.
+ */
+async function formatEntity(doc, collection, preloadedRelDocs) {
   const base = {
     id: doc.id,
     OpenSancUrl: doc.id
@@ -140,7 +159,10 @@ async function formatEntity(doc, collection) {
   };
 
   const sanctions_metadata = buildSanctionsMetadata(doc);
-  const relationships = await buildRelationshipsForEntity(doc, collection);
+  const relationships =
+    preloadedRelDocs !== undefined
+      ? relationshipsFromRelDocs(preloadedRelDocs)
+      : await buildRelationshipsForEntity(doc, collection);
 
   return {
     ...base,
@@ -152,5 +174,7 @@ async function formatEntity(doc, collection) {
 module.exports = {
   formatEntity,
   buildSanctionsMetadata,
+  indexRelationshipDocsByHolder,
+  relationshipsFromRelDocs,
 };
 

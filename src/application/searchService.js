@@ -2,11 +2,24 @@
  * Capa de aplicación: caso de uso de búsqueda.
  *
  * - Construcción de la query (regex segura) sobre MongoDB.
- * - Ejecución de la búsqueda.
+ * - Ejecución de la búsqueda (con tope opcional de resultados vía env).
  * - Enriquecimiento de resultados vía la capa de dominio (formatEntity).
  */
 
-const { formatEntity } = require('../domain/searchFormatter');
+const { formatEntity, indexRelationshipDocsByHolder } = require('../domain/searchFormatter');
+const { RELATION_SCHEMAS } = require('../constants');
+
+/** Máximo de entidades devueltas por búsqueda (evita cargar colecciones enteras en memoria). */
+const SEARCH_MAX_RESULTS = (() => {
+  const n = parseInt(process.env.SEARCH_MAX_RESULTS, 10);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 10_000) : 200;
+})();
+
+/** Tope de documentos de relación traídos en la consulta por lotes. */
+const SEARCH_REL_BATCH_LIMIT = (() => {
+  const n = parseInt(process.env.SEARCH_REL_BATCH_LIMIT, 10);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 50_000) : 2000;
+})();
 
 /** Escapa caracteres especiales para usar el input en una regex segura. */
 function escapeRegex(s) {
@@ -49,8 +62,29 @@ async function runSearch(collection, q) {
         ],
       };
 
-  const cursor = collection.find(mongoQuery, { projection: { searchableText: 0, _sourceFile: 0 } });
-  return cursor.toArray();
+  return collection
+    .find(mongoQuery, { projection: { searchableText: 0, _sourceFile: 0 } })
+    .limit(SEARCH_MAX_RESULTS)
+    .toArray();
+}
+
+async function fetchRelationshipsForHolders(collection, holderIds) {
+  if (holderIds.length === 0) {
+    return new Map();
+  }
+
+  const relDocs = await collection
+    .find(
+      {
+        schema: { $in: RELATION_SCHEMAS },
+        'properties.holder': { $in: holderIds },
+      },
+      { projection: { searchableText: 0, _sourceFile: 0 } }
+    )
+    .limit(SEARCH_REL_BATCH_LIMIT)
+    .toArray();
+
+  return indexRelationshipDocsByHolder(relDocs);
 }
 
 /**
@@ -59,7 +93,16 @@ async function runSearch(collection, q) {
  */
 async function searchEntities(collection, queryText) {
   const docs = await runSearch(collection, queryText);
-  const results = await Promise.all(docs.map((doc) => formatEntity(doc, collection)));
+  const holderIds = [...new Set(docs.map((d) => d.id).filter(Boolean))];
+  const relsByHolder = await fetchRelationshipsForHolders(collection, holderIds);
+
+  const results = await Promise.all(
+    docs.map((doc) => {
+      const relDocs = doc.id ? relsByHolder.get(String(doc.id)) || [] : [];
+      return formatEntity(doc, collection, relDocs);
+    })
+  );
+
   return {
     count: results.length,
     results,
@@ -68,5 +111,5 @@ async function searchEntities(collection, queryText) {
 
 module.exports = {
   searchEntities,
+  SEARCH_MAX_RESULTS,
 };
-

@@ -1,0 +1,72 @@
+# Stack mínimo de prueba (igual de reducido que el principal: solo lo imprescindible).
+# Incluye MongoDB limitado (2 vCPU / 2 GiB), un job que restaura desde ./backups y la API Node.
+# No sustituye docker-compose.yml: usa otros puertos para poder tener ambos a la vez.
+#
+# Requisito: al menos un backup en ./backups (ej. npm run backup).
+#
+# URLs en el host:
+#   API:   http://localhost:3001
+#   Mongo: mongodb://localhost:27018
+#
+# Levantar: npm run compose:test-db
+# Bajar:    npm run compose:test-db:down
+
+version: "3.9"
+
+services:
+  mongodb-test:
+    image: mongo:6
+    container_name: opensanctions_mongodb_test
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongodb_test_data:/data/db
+    command: ["mongod", "--wiredTigerCacheSizeGB", "1"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 3s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+
+  db-restore:
+    build:
+      context: .
+      dockerfile: Dockerfile.mongodb-tools
+    container_name: opensanctions_db_restore_test
+    environment:
+      MONGO_URI: mongodb://mongodb-test:27017
+      MONGO_DB: opensanctions
+      BACKUP_ROOT: /backup
+    volumes:
+      - ./backups:/backup:ro
+    depends_on:
+      mongodb-test:
+        condition: service_healthy
+    restart: "no"
+
+  api-test:
+    build: .
+    container_name: opensanctions_api_test
+    ports:
+      - "3001:3000"
+    environment:
+      MONGO_URI: mongodb://mongodb-test:27017
+      MONGO_DB: opensanctions
+      PORT: "3000"
+      NODE_ENV: production
+      OPENSANCTIONS_SEARCH_LITE: "1"
+    depends_on:
+      db-restore:
+        condition: service_completed_successfully
+      mongodb-test:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mongodb_test_data:

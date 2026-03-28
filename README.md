@@ -277,6 +277,32 @@ docker run -d -p 45001:80 --network mi-red \
 
 Opcional: `-e MONGO_DB=analytikoDB3` si usas otra base.
 
+### Probar la API desplegada con `curl`
+
+Sustituye la URL base por la de tu entorno (host y puerto que hayas publicado). Con los `docker run` de arriba que usan `-p 45001:80`, la API queda en `http://localhost:45001` (el contenedor escucha en el puerto 80; desde fuera accedes por el mapeado).
+
+**Búsqueda (GET):**
+
+```bash
+curl -sS "http://localhost:45001/search?q=Behrouz"
+```
+
+**Estado del servicio:**
+
+```bash
+curl -sS "http://localhost:45001/health"
+```
+
+**Búsqueda (POST):**
+
+```bash
+curl -sS -X POST "http://localhost:45001/search" \
+  -H "Content-Type: application/json" \
+  -d '{"q":"Behrouz"}'
+```
+
+En un servidor remoto, cambia `localhost:45001` por tu dominio o IP y el puerto expuesto (por ejemplo `https://api.ejemplo.com` si hay TLS y un proxy inverso).
+
 ---
 
 ## 5. Pruebas de búsqueda

@@ -51,10 +51,14 @@ echo "  URI: $MONGO_URI"
 echo "  DB : $MONGO_DB"
 echo "  Desde: $DB_DUMP_DIR"
 echo
-read -r -p "Esto sobrescribirá los datos actuales. ¿Continuar? [y/N] " confirm
-if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-  echo "Restauración cancelada."
-  exit 0
+if [ "${SKIP_RESTORE_CONFIRM:-}" = "1" ]; then
+  echo "SKIP_RESTORE_CONFIRM=1: continuando sin preguntar."
+else
+  read -r -p "Esto sobrescribirá los datos actuales. ¿Continuar? [y/N] " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    echo "Restauración cancelada."
+    exit 0
+  fi
 fi
 
 if ! command -v mongorestore >/dev/null 2>&1; then
