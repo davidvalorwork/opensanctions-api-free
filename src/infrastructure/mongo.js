@@ -36,8 +36,17 @@ function buildMongoClientOptions() {
 
 async function connectDb() {
   if (db) return db;
+  // Timeouts explícitos y generosos: en Cloud Run el primer connect por VPC a
+  // una IP privada en cold start puede tardar varios segundos. El default del
+  // driver es 30s, pero lo dejamos configurable por env para tunear sin rebuild.
+  const baseOpts = {
+    serverSelectionTimeoutMS:
+      Number(process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS) || 15000,
+    connectTimeoutMS: Number(process.env.MONGO_CONNECT_TIMEOUT_MS) || 15000,
+  };
   const extra = buildMongoClientOptions();
-  client = extra ? new MongoClient(MONGO_URI, extra) : new MongoClient(MONGO_URI);
+  const opts = extra ? { ...baseOpts, ...extra } : baseOpts;
+  client = new MongoClient(MONGO_URI, opts);
   await client.connect();
   db = client.db(DEFAULT_DB_NAME);
   return db;

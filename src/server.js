@@ -13,8 +13,28 @@ const { DEFAULT_PORT } = require('./constants');
 const PORT = DEFAULT_PORT;
 const app = createApp();
 
+// Reintenta el connect inicial: si Mongo tarda en estar disponible (cold start
+// de Cloud Run, arranque de la VM Mongo, etc.) no matamos el contenedor al
+// primer fallo. Solo abortamos tras agotar los reintentos.
+async function connectWithRetry() {
+  const maxRetries = Number(process.env.MONGO_CONNECT_RETRIES) || 5;
+  const delayMs = Number(process.env.MONGO_CONNECT_RETRY_DELAY_MS) || 3000;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await connectDb();
+      return;
+    } catch (err) {
+      if (attempt >= maxRetries) throw err;
+      console.warn(
+        `Mongo connect intento ${attempt}/${maxRetries} falló (${err.message}); reintento en ${delayMs}ms`
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 async function main() {
-  await connectDb();
+  await connectWithRetry();
   app.listen(PORT, () => {
     console.log(`API Open Sanctions escuchando en http://localhost:${PORT}`);
     if (isRapidApiEnabled()) {
