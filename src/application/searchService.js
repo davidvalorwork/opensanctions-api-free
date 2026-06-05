@@ -26,6 +26,48 @@ function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** Escapa un único carácter para uso seguro dentro de una regex. */
+function escapeRegexChar(ch) {
+  return ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Construye un patrón de regex INSENSIBLE A ACENTOS para un token.
+ * Cada letra base se reemplaza por una clase que cubre sus variantes acentuadas,
+ * de modo que "Nicolas" matchee "Nicolás" y "Peru" matchee "Perú".
+ */
+const ACCENT_CLASSES = {
+  a: '[aáàâäãåAÁÀÂÄÃÅ]',
+  e: '[eéèêëEÉÈÊË]',
+  i: '[iíìîïIÍÌÎÏ]',
+  o: '[oóòôöõOÓÒÔÖÕ]',
+  u: '[uúùûüUÚÙÛÜ]',
+  n: '[nñNÑ]',
+  c: '[cçCÇ]',
+};
+function accentInsensitivePattern(token) {
+  // Quitamos los diacríticos del propio token para mapear sobre la letra base.
+  const base = token.normalize('NFD').replace(/[̀-ͯ]/g, '');
+  let out = '';
+  for (const ch of base) {
+    const lower = ch.toLowerCase();
+    out += ACCENT_CLASSES[lower] || escapeRegexChar(ch);
+  }
+  return out;
+}
+
+/**
+ * Divide el texto de búsqueda en tokens (palabras) y devuelve una regex
+ * insensible a acentos por cada token. Se descartan tokens vacíos.
+ */
+function buildTokenRegexes(q) {
+  return String(q)
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map((tok) => new RegExp(accentInsensitivePattern(tok), 'i'));
+}
+
 function isLiteSearchEnabled() {
   // Se activa para hacer la búsqueda más eficiente:
   // - full: busca en searchableText (aplanado de properties) y en id
@@ -42,25 +84,33 @@ function isLiteSearchEnabled() {
  * - Modo **lite**: Coincidencia = el texto aparece en `caption` o en el campo `id`.
  */
 async function runSearch(collection, q) {
-  const regexFull = new RegExp(escapeRegex(q), 'i');
-  // "LIKE" = contiene/subcadena (no anclado). Para caption, NO case sensitive.
-  const regexCaptionLike = new RegExp(escapeRegex(q));
-  // Para id mantenemos case-insensitive por compatibilidad (IDs suelen ser alfanuméricos).
-  const regexIdLike = new RegExp(escapeRegex(q), 'i');
+  const tokens = buildTokenRegexes(q);
+  if (tokens.length === 0) {
+    return [];
+  }
 
   const lite = isLiteSearchEnabled();
-  const mongoQuery = lite
-    ? {
-        // Modo lite: evitamos searchableText (aplanado de properties) para ser más eficiente.
-        $or: [{ caption: regexCaptionLike }, { id: { $regex: regexIdLike } }],
-      }
-    : {
-        $or: [
-          { searchableText: regexFull },
-          // Incluir coincidencias por id (parcial o exacta) como pide la especificación
-          { id: { $regex: regexIdLike } },
-        ],
-      };
+
+  // Para cada token, debe aparecer en alguno de los campos buscables. En modo
+  // full incluimos `searchableText` (aplanado de properties); en lite usamos
+  // `caption` para ser más eficiente. `id` siempre se incluye.
+  const clauseFor = (rx) =>
+    lite
+      ? { $or: [{ caption: rx }, { id: { $regex: rx } }] }
+      : {
+          $or: [
+            { searchableText: rx },
+            { caption: rx },
+            { id: { $regex: rx } },
+          ],
+        };
+
+  // AND de todos los tokens → "Nicolas Maduro" matchea "Nicolás Ernesto Maduro
+  // Guerra" aunque las palabras no sean contiguas ni lleven los mismos acentos.
+  const mongoQuery =
+    tokens.length === 1
+      ? clauseFor(tokens[0])
+      : { $and: tokens.map(clauseFor) };
 
   return collection
     .find(mongoQuery, { projection: { searchableText: 0, _sourceFile: 0 } })
