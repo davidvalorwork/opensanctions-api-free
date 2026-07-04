@@ -162,4 +162,9 @@ async function searchEntities(collection, queryText) {
 module.exports = {
   searchEntities,
   SEARCH_MAX_RESULTS,
+  // Exposed for unit tests (tests/searchService.test.js). Pure functions,
+  // no overhead en producción.
+  escapeRegex,
+  accentInsensitivePattern,
+  buildTokenRegexes,
 };

@@ -1,0 +1,17 @@
+{
+  "env": {
+    "node": true,
+    "es2022": true,
+    "jest": true
+  },
+  "extends": "eslint:recommended",
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "script"
+  },
+  "rules": {
+    "no-unused-vars": "off",
+    "no-undef": "off"
+  },
+  "ignorePatterns": ["node_modules/", "coverage/"]
+}
