@@ -28,6 +28,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0",
     "@codegenie/serverless-express": "^4.17.1",
     "cors": "^2.8.6",
     "dotenv": "^16.4.5",

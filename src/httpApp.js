@@ -5,6 +5,8 @@
 const express = require('express');
 const { isRapidApiEnabled, applyRapidApiMiddleware } = require('./infrastructure/rapidApi');
 const { searchEntities } = require('./application/searchService');
+const { screenSubject } = require('./application/screeningService');
+const { isLlmEnabled, getModel } = require('./infrastructure/anthropic');
 const { getCollection } = require('./infrastructure/mongo');
 const { COLLECTIONS } = require('./constants');
 
@@ -55,6 +57,40 @@ function createApp() {
     }
   });
 
+  // Adjudicación: busca y además decide qué coincidencias son realmente el
+  // sujeto, con justificación auditable. Ver application/screeningService.js.
+  app.post('/screen', async (req, res) => {
+    const name = (req.body?.name ?? '').trim();
+    if (!name) {
+      return res.status(400).json({
+        error: 'Falta el nombre del sujeto',
+        usage: 'POST /screen con body { "name": "...", "birthDate": "1962-11-23", "nationality": "ve" }',
+      });
+    }
+
+    // Sin credencial el endpoint se apaga solo: el resto de la API sigue viva.
+    if (!isLlmEnabled()) {
+      return res.status(501).json({
+        error: 'Adjudicación no disponible',
+        detail: 'Configura ANTHROPIC_API_KEY para habilitar POST /screen. GET /search funciona sin ella.',
+      });
+    }
+
+    const subject = {
+      name,
+      birthDate: req.body?.birthDate,
+      nationality: req.body?.nationality,
+    };
+
+    try {
+      const collection = getCollection(COLLECTION_NAME);
+      res.json(await screenSubject(collection, subject));
+    } catch (err) {
+      console.error('Error en adjudicación:', err);
+      res.status(500).json({ error: 'Error interno en la adjudicación', detail: err.message });
+    }
+  });
+
   app.get('/health', (req, res) => {
     let dbStatus = 'disconnected';
     try {
@@ -63,7 +99,11 @@ function createApp() {
     } catch {
       dbStatus = 'disconnected';
     }
-    res.json({ status: 'ok', db: dbStatus });
+    res.json({
+      status: 'ok',
+      db: dbStatus,
+      screening: isLlmEnabled() ? { enabled: true, model: getModel() } : { enabled: false },
+    });
   });
 
   return app;

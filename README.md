@@ -189,7 +189,8 @@ Variables de entorno usadas:
 |--------|-----------|-------------|
 | GET    | `/search` | Búsqueda con query string `q` (o `query`). |
 | POST   | `/search` | Búsqueda con cuerpo JSON `{ "q": "..." }` o `{ "query": "..." }`. |
-| GET    | `/health` | Estado del servicio y conexión a la base. |
+| POST   | `/screen` | Adjudicación de alertas: busca **y decide** qué coincidencias son el sujeto. |
+| GET    | `/health` | Estado del servicio, conexión a la base y disponibilidad de `/screen`. |
 
 ### Ejemplos de uso
 
@@ -207,6 +208,69 @@ curl -X POST http://localhost:3000/search -H "Content-Type: application/json" -d
 ```
 
 **Respuesta típica (ver ejemplo detallado más arriba en la sección 2):** la API devuelve `count` y un array `results` con cada entidad en el formato enriquecido (`OpenSancUrl`, `sanctions_metadata`, `relationships`).
+
+### Adjudicación de alertas — `POST /screen`
+
+`GET /search` responde *qué coincide*. No responde la pregunta que realmente cuesta dinero en cumplimiento: **cuáles de esas coincidencias son mi cliente**.
+
+Buscar "Juan Pérez" devuelve decenas de entidades. Separar al sancionado del homónimo es trabajo manual de analista, y es el cuello de botella real de un flujo AML. `POST /screen` lo automatiza y —importante para auditoría— **deja por escrito el motivo de cada decisión**.
+
+```bash
+curl -X POST http://localhost:5001/screen \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Nicolas Maduro", "birthDate": "1962-11-23", "nationality": "ve"}'
+```
+
+```json
+{
+  "counts": { "candidates": 12, "clearedByRule": 7, "reviewedByModel": 5, "notReviewed": 0 },
+  "verdicts": [
+    {
+      "entity_id": "NK-4mkA...",
+      "name": "Nicolás Maduro Moros",
+      "assessment": "likely_match",
+      "confidence": 0.96,
+      "matched_on": ["name", "birth_date", "nationality"],
+      "conflicts": [],
+      "rationale": "Nombre completo y fecha de nacimiento 1962-11-23 coinciden exactamente; nacionalidad venezolana concuerda.",
+      "decided_by": "model"
+    },
+    {
+      "entity_id": "ve-an-0912",
+      "name": "Nicolás Maduro Guerra",
+      "assessment": "unlikely_match",
+      "confidence": 1,
+      "conflicts": ["birth_date"],
+      "rationale": "Fecha de nacimiento incompatible: sujeto 1962, candidato 1990.",
+      "decided_by": "rule"
+    }
+  ],
+  "usage": {
+    "model": "claude-opus-5",
+    "input_tokens": 2145,
+    "cache_read_input_tokens": 1792,
+    "output_tokens": 412,
+    "estimated_cost_usd": 0.011051
+  }
+}
+```
+
+**Cómo controla el coste** — el volumen en screening es alto, así que el coste por alerta es una métrica de negocio:
+
+1. **Descarte determinista primero.** Una fecha de nacimiento incompatible se resuelve con una comparación de enteros. Esos candidatos salen marcados `decided_by: "rule"` sin gastar un token. La tolerancia es de ±1 año: las fuentes discrepan de forma rutinaria por transcripción o zona horaria.
+2. **Digest, no entidad completa.** Al modelo van nombre, alias, fechas, nacionalidades, cargos y programas — no los KB de propiedades y relaciones anidadas que devuelve FtM.
+3. **Caché de prompt.** El prompt de sistema es idéntico en cada llamada y va marcado como cacheable: una lectura de caché cuesta ~10% de un token de entrada.
+4. **Tope explícito de candidatos.** Por encima de `MAX_CANDIDATES_PER_CALL` los sobrantes se devuelven en `not_reviewed` — nunca se truncan en silencio.
+
+**Anclaje contra alucinación:** todo veredicto cuyo `entity_id` no esté en la lista enviada se descarta. En un flujo de cumplimiento no se corrige una alucinación, se tira.
+
+**Configuración:**
+
+| Variable | Por defecto | Nota |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | — | Sin ella `/screen` responde `501` y el resto de la API sigue funcionando. |
+| `ANTHROPIC_MODEL` | `claude-opus-5` | |
+| `ANTHROPIC_EFFORT` | `medium` | `low`–`max`. Palanca principal de coste/latencia. |
 
 ### Arranque de la API
 
