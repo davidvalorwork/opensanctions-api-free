@@ -1,6 +1,67 @@
-# Open Sanctions – Migración MongoDB y API de búsqueda
+# OpenSanctions API — search + LLM alert adjudication
 
-Proyecto que migra los datos Open Sanctions (formato Follow the Money) desde archivos JSON en `datajson/` a MongoDB y expone una API sencilla en Node.js para búsquedas según la especificación indicada.
+An AML sanctions screening API with an **LLM adjudication layer that leaves a written,
+auditable reason for every decision**.
+
+`GET /search` answers *what matches*. It does not answer the question that actually costs money
+in compliance: **which of these matches is my customer?**
+
+Searching "Juan Pérez" returns dozens of entities. Separating the sanctioned individual from the
+namesake is manual analyst work, and it is the real bottleneck of an AML workflow. `POST /screen`
+automates it — and, critically for audit, records *why* each call was made.
+
+```json
+{
+  "entity_id": "NK-4mkA...",
+  "assessment": "likely_match",
+  "confidence": 0.96,
+  "matched_on": ["name", "birth_date", "nationality"],
+  "conflicts": [],
+  "rationale": "Full name and date of birth 1962-11-23 match exactly; Venezuelan nationality is consistent.",
+  "decided_by": "model"
+}
+```
+
+## Four design decisions worth reading
+
+**1. Deterministic filter before spending a token.** An incompatible date of birth is an integer
+comparison, not an inference. Those candidates come back tagged `decided_by: "rule"` having cost
+nothing. Tolerance is ±1 year — sources routinely disagree by transcription or timezone.
+
+**2. Digest, not full entity.** The model receives name, aliases, dates, nationalities, positions
+and programs — not the kilobytes of nested properties and relationships FtM returns.
+
+**3. Grounding against hallucination.** Any verdict whose `entity_id` was not in the list sent to
+the model is discarded. *In a compliance workflow you do not correct a hallucination — you throw
+it out.*
+
+**4. No silent truncation.** Above `MAX_CANDIDATES_PER_CALL`, the remainder is returned in
+`not_reviewed`. A screening system that quietly drops candidates is worse than one that refuses
+to answer.
+
+Cost per alert is reported on every response — input tokens, cache reads, output tokens and
+estimated USD — because at screening volume it is a business metric, not a footnote.
+
+## Running it
+
+```bash
+npm install
+npm run test:unit                # 23 tests, ~0.4s. No network, no API key, no Mongo.
+docker compose up                # API on :5001
+```
+
+Tests inject a fake LLM through the service boundary, so the suite runs offline and
+deterministically.
+
+Without `ANTHROPIC_API_KEY`, `/screen` returns `501` and the rest of the API keeps working.
+
+**Stack:** Node.js · MongoDB · Docker · Jest · Anthropic API with prompt caching and JSON-schema
+structured output. Hexagonal layout — `domain` / `application` / `infrastructure`.
+
+**Full endpoint documentation:** [`POST /screen`](#adjudicación-de-alertas--post-screen)
+
+> The detailed specification below is in Spanish: data model, search rules, migration script,
+> deployment and test suite.
 
 ---
 
