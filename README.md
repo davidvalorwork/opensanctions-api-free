@@ -22,7 +22,7 @@ automates it — and, critically for audit, records *why* each call was made.
 }
 ```
 
-## Four design decisions worth reading
+## Five design decisions worth reading
 
 **1. Deterministic filter before spending a token.** An incompatible date of birth is an integer
 comparison, not an inference. Those candidates come back tagged `decided_by: "rule"` having cost
