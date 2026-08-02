@@ -29,7 +29,16 @@ function getClient() {
     throw new Error('ANTHROPIC_API_KEY no configurada');
   }
   if (!client) {
-    client = new Anthropic();
+    // El SDK reintenta 2 veces por defecto con backoff, lo cual está bien. Lo que
+    // no sirve es su timeout por defecto de 10 minutos: esto cuelga de una
+    // petición HTTP, y un cliente que espera diez minutos ya se fue. 60 s cubre
+    // con margen una adjudicación de MAX_CANDIDATES_PER_CALL candidatos.
+    //
+    // Ojo con el compuesto: 3 intentos × 60 s es el peor caso real, no 60 s.
+    client = new Anthropic({
+      timeout: Number(process.env.ANTHROPIC_TIMEOUT_MS) || 60_000,
+      maxRetries: Number(process.env.ANTHROPIC_MAX_RETRIES ?? 2),
+    });
   }
   return client;
 }

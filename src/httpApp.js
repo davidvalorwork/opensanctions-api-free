@@ -2,15 +2,35 @@
  * Aplicación Express sin escuchar puerto: reutilizable en servidor local y Lambda.
  */
 
+const crypto = require('node:crypto');
 const express = require('express');
 const { isRapidApiEnabled, applyRapidApiMiddleware } = require('./infrastructure/rapidApi');
 const { searchEntities } = require('./application/searchService');
 const { screenSubject } = require('./application/screeningService');
 const { isLlmEnabled, getModel } = require('./infrastructure/anthropic');
+const { screenGuard } = require('./infrastructure/screenGuard');
 const { getCollection } = require('./infrastructure/mongo');
 const { COLLECTIONS } = require('./constants');
 
 const COLLECTION_NAME = COLLECTIONS.ENTITIES;
+
+/**
+ * Un fallo interno se registra completo y se responde vacío.
+ *
+ * `err.message` viene de Mongo o del SDK y puede llevar cadenas de conexión,
+ * rutas o estructura de esquema. El cliente recibe un identificador; el detalle
+ * vive en el log, que es donde se puede leer sin exponerlo.
+ */
+function serverError(res, req, scope, err) {
+  console.error(JSON.stringify({
+    level: 'error',
+    scope,
+    request_id: req.id,
+    message: err.message,
+    stack: err.stack,
+  }));
+  res.status(500).json({ error: `Error interno en ${scope}`, request_id: req.id });
+}
 
 function createApp() {
   const app = express();
@@ -18,6 +38,14 @@ function createApp() {
     applyRapidApiMiddleware(app);
   }
   app.use(express.json());
+
+  // Identificador por petición: correlaciona la respuesta del cliente con el log
+  // y, cuando exista el registro de auditoría, con la decisión almacenada.
+  app.use((req, res, next) => {
+    req.id = req.get('x-request-id') || crypto.randomUUID();
+    res.set('x-request-id', req.id);
+    next();
+  });
 
   app.get('/search', async (req, res) => {
     const q = (req.query.q ?? req.query.query ?? '').trim();
@@ -33,8 +61,7 @@ function createApp() {
       const result = await searchEntities(collection, q);
       res.json(result);
     } catch (err) {
-      console.error('Error en búsqueda:', err);
-      res.status(500).json({ error: 'Error interno en la búsqueda', detail: err.message });
+      serverError(res, req, 'la búsqueda', err);
     }
   });
 
@@ -52,14 +79,13 @@ function createApp() {
       const result = await searchEntities(collection, q);
       res.json(result);
     } catch (err) {
-      console.error('Error en búsqueda:', err);
-      res.status(500).json({ error: 'Error interno en la búsqueda', detail: err.message });
+      serverError(res, req, 'la búsqueda', err);
     }
   });
 
   // Adjudicación: busca y además decide qué coincidencias son realmente el
   // sujeto, con justificación auditable. Ver application/screeningService.js.
-  app.post('/screen', async (req, res) => {
+  app.post('/screen', screenGuard, async (req, res) => {
     const name = (req.body?.name ?? '').trim();
     if (!name) {
       return res.status(400).json({
@@ -86,8 +112,7 @@ function createApp() {
       const collection = getCollection(COLLECTION_NAME);
       res.json(await screenSubject(collection, subject));
     } catch (err) {
-      console.error('Error en adjudicación:', err);
-      res.status(500).json({ error: 'Error interno en la adjudicación', detail: err.message });
+      serverError(res, req, 'la adjudicación', err);
     }
   });
 

@@ -46,7 +46,7 @@ estimated USD — because at screening volume it is a business metric, not a foo
 
 ```bash
 npm install
-npm run test:unit                # 23 tests, ~0.4s. No network, no API key, no Mongo.
+npm run test:unit                # 30 tests, ~0.2s. No network, no API key, no Mongo.
 docker compose up                # API on :5001
 ```
 
@@ -54,6 +54,10 @@ Tests inject a fake LLM through the service boundary, so the suite runs offline 
 deterministically.
 
 Without `ANTHROPIC_API_KEY`, `/screen` returns `501` and the rest of the API keeps working.
+
+`/screen` is the only endpoint that costs money per call. Set `SCREEN_API_KEY` and it requires
+an `x-api-key` header plus a per-key rate limit — leaving it open is a budget denial-of-service,
+not an availability one.
 
 **Stack:** Node.js · MongoDB · Docker · Jest · Anthropic API with prompt caching and JSON-schema
 structured output. Hexagonal layout — `domain` / `application` / `infrastructure`.
