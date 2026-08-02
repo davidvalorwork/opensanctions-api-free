@@ -39,6 +39,15 @@ it out.*
 `not_reviewed`. A screening system that quietly drops candidates is worse than one that refuses
 to answer.
 
+**5. Every decision is persisted, not just returned.** The question an auditor asks is not *what
+did it decide* but *why, and under which rules*. So the audit record stores the resolved
+`model_version` — not the alias — a `prompt_hash` of the evaluation instructions, and the exact
+candidate digests the model was shown. Without those three, you cannot tell whether January's
+decision and June's were made under the same criteria.
+
+If the audit write fails, the request fails. In compliance, a decision that wasn't recorded is a
+decision that didn't happen: it can't be defended, reproduced, or examined.
+
 Cost per alert is reported on every response — input tokens, cache reads, output tokens and
 estimated USD — because at screening volume it is a business metric, not a footnote.
 
@@ -46,7 +55,7 @@ estimated USD — because at screening volume it is a business metric, not a foo
 
 ```bash
 npm install
-npm run test:unit                # 30 tests, ~0.2s. No network, no API key, no Mongo.
+npm run test:unit                # 35 tests, ~0.2s. No network, no API key, no Mongo.
 docker compose up                # API on :5001
 ```
 

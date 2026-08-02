@@ -212,3 +212,140 @@ describe('screenSubject', () => {
     expect(out.verdicts.map((v) => v.entity_id)).toEqual(['b', 'a']);
   });
 });
+
+describe('registro de auditoría', () => {
+  const subject = { name: 'Juan Pérez', birthDate: '1962-11-23' };
+
+  /** Colección de auditoría falsa que captura lo que se le escribe. */
+  function fakeAudit() {
+    const written = [];
+    return {
+      written,
+      insertOne: async (doc) => {
+        written.push(doc);
+        return { insertedId: 'audit-1' };
+      },
+    };
+  }
+
+  function modelSaysMatch() {
+    return jest.fn().mockResolvedValue({
+      result: {
+        verdicts: [
+          {
+            entity_id: 'real-1',
+            assessment: 'likely_match',
+            confidence: 0.9,
+            rationale: 'Nombre y año coinciden.',
+            matched_on: ['name', 'birth_date'],
+            conflicts: [],
+          },
+        ],
+      },
+      usage: { input_tokens: 900, output_tokens: 120 },
+      model: 'claude-opus-5-20260101',
+      costUsd: 0.0075,
+    });
+  }
+
+  test('guarda la decisión con el modelo resuelto y el hash del prompt', async () => {
+    const collection = fakeCollection([entity('real-1', { birthDate: ['1962'] })]);
+    const auditCollection = fakeAudit();
+
+    const out = await screenSubject(collection, subject, {
+      complete: modelSaysMatch(),
+      auditCollection,
+      requestId: 'req-abc',
+    });
+
+    expect(out.audit_id).toBe('audit-1');
+    expect(auditCollection.written).toHaveLength(1);
+
+    const rec = auditCollection.written[0];
+    expect(rec.request_id).toBe('req-abc');
+    expect(rec.subject).toEqual(subject);
+    expect(rec.verdicts[0].rationale).toBe('Nombre y año coinciden.');
+    // El alias no sirve para auditar: hace falta la versión que respondió.
+    expect(rec.model_version).toBe('claude-opus-5-20260101');
+    expect(rec.prompt_hash).toMatch(/^[a-f0-9]{16}$/);
+    expect(rec.candidates_sent[0].entity_id).toBe('real-1');
+    expect(rec.recorded_at).toBeInstanceOf(Date);
+  });
+
+  test('registra también los descartes por regla: son decisiones igual', async () => {
+    const collection = fakeCollection([entity('a', { birthDate: ['1985'] })]);
+    const auditCollection = fakeAudit();
+    const complete = jest.fn();
+
+    const out = await screenSubject(collection, subject, { complete, auditCollection });
+
+    expect(complete).not.toHaveBeenCalled();
+    expect(auditCollection.written).toHaveLength(1);
+    expect(auditCollection.written[0].verdicts[0].decided_by).toBe('rule');
+    expect(out.audit_id).toBe('audit-1');
+  });
+
+  test('sin colección de auditoría devuelve audit_id null en vez de aparentar registro', async () => {
+    const collection = fakeCollection([entity('real-1', { birthDate: ['1962'] })]);
+
+    const out = await screenSubject(collection, subject, { complete: modelSaysMatch() });
+
+    expect(out.audit_id).toBeNull();
+  });
+
+  test('si falla la escritura, falla la petición: una decisión sin registro no ocurrió', async () => {
+    const collection = fakeCollection([entity('real-1', { birthDate: ['1962'] })]);
+    const auditCollection = {
+      insertOne: async () => {
+        throw new Error('mongo caído');
+      },
+    };
+
+    await expect(
+      screenSubject(collection, subject, { complete: modelSaysMatch(), auditCollection })
+    ).rejects.toThrow('mongo caído');
+  });
+
+  test('cuenta los veredictos descartados por no estar anclados', async () => {
+    const collection = fakeCollection([entity('real-1', { birthDate: ['1962'] })]);
+
+    const complete = jest.fn().mockResolvedValue({
+      result: {
+        verdicts: [
+          {
+            entity_id: 'real-1',
+            assessment: 'likely_match',
+            confidence: 0.9,
+            rationale: 'ok',
+            matched_on: ['name'],
+            conflicts: [],
+          },
+          {
+            entity_id: 'inventado-1',
+            assessment: 'likely_match',
+            confidence: 0.9,
+            rationale: 'alucinación',
+            matched_on: ['name'],
+            conflicts: [],
+          },
+          {
+            entity_id: 'inventado-2',
+            assessment: 'possible_match',
+            confidence: 0.5,
+            rationale: 'alucinación',
+            matched_on: ['name'],
+            conflicts: [],
+          },
+        ],
+      },
+      usage: { input_tokens: 900, output_tokens: 120 },
+      model: 'claude-opus-5',
+      costUsd: 0.0075,
+    });
+
+    const out = await screenSubject(collection, subject, { complete });
+
+    expect(out.counts.discardedUngrounded).toBe(2);
+    expect(out.verdicts).toHaveLength(1);
+  });
+});

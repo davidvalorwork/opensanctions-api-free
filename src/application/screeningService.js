@@ -18,6 +18,7 @@
 const { searchEntities } = require('./searchService');
 const { toDigest, screenDeterministically } = require('../domain/candidateDigest');
 const { completeStructured } = require('../infrastructure/anthropic');
+const { recordAdjudication, hashPrompt } = require('../infrastructure/screeningAudit');
 const { MAX_CANDIDATES_PER_CALL } = require('../constants');
 
 const SYSTEM_PROMPT = [
@@ -91,11 +92,46 @@ function buildUserPrompt(subject, digests) {
 }
 
 /**
+ * Guarda la adjudicación y devuelve la respuesta con su identificador.
+ *
+ * Se registra también cuando el modelo no intervino: un descarte por regla es
+ * una decisión, y el auditor pregunta por todas, no solo por las caras.
+ *
+ * Si no hay colección de auditoría configurada, se devuelve tal cual — así el
+ * proyecto sigue arrancando en local sin base de datos de auditoría, pero la
+ * respuesta lleva `audit_id: null` en vez de aparentar que quedó registrada.
+ */
+async function persist(response, context, deps) {
+  const { auditCollection, requestId } = deps;
+  if (!auditCollection) {
+    return { ...response, audit_id: null };
+  }
+
+  const record = deps.recordAudit || recordAdjudication;
+  const auditId = await record(auditCollection, {
+    request_id: requestId || null,
+    subject: response.subject,
+    candidates_sent: context.sent,
+    verdicts: response.verdicts,
+    not_reviewed: response.not_reviewed,
+    counts: response.counts,
+    model_version: response.usage?.model || null,
+    prompt_hash: hashPrompt(SYSTEM_PROMPT),
+    usage: response.usage,
+  });
+
+  return { ...response, audit_id: auditId };
+}
+
+/**
  * Adjudica los resultados de sanciones para un sujeto.
  *
  * @param {import('mongodb').Collection} collection colección de entidades
  * @param {{name: string, birthDate?: string, nationality?: string}} subject
- * @param {{complete?: Function}} deps inyectable para tests (sin red)
+ * @param {object} deps inyectable para tests (sin red)
+ * @param {Function} [deps.complete] cliente del modelo
+ * @param {import('mongodb').Collection} [deps.auditCollection] registro de decisiones
+ * @param {string} [deps.requestId] correlación con el log HTTP
  */
 async function screenSubject(collection, subject, deps = {}) {
   const complete = deps.complete || completeStructured;
@@ -112,13 +148,17 @@ async function screenSubject(collection, subject, deps = {}) {
 
   // Sin nada que consultar no se llama al modelo: cero tokens, cero coste.
   if (sent.length === 0) {
-    return {
-      subject,
-      counts: { candidates: digests.length, clearedByRule: cleared.length, reviewedByModel: 0 },
-      verdicts: cleared.sort(byRisk),
-      not_reviewed: notReviewed.map((d) => ({ entity_id: d.entity_id, name: d.name })),
-      usage: null,
-    };
+    return persist(
+      {
+        subject,
+        counts: { candidates: digests.length, clearedByRule: cleared.length, reviewedByModel: 0 },
+        verdicts: cleared.sort(byRisk),
+        not_reviewed: notReviewed.map((d) => ({ entity_id: d.entity_id, name: d.name })),
+        usage: null,
+      },
+      { sent: [] },
+      deps
+    );
   }
 
   const { result, usage, model, costUsd } = await complete({
@@ -136,25 +176,34 @@ async function screenSubject(collection, subject, deps = {}) {
     .filter((v) => sentIds.has(v.entity_id))
     .map((v) => ({ ...v, name: nameById.get(v.entity_id), decided_by: 'model' }));
 
-  return {
-    subject,
-    counts: {
-      candidates: digests.length,
-      clearedByRule: cleared.length,
-      reviewedByModel: modelVerdicts.length,
-      notReviewed: notReviewed.length,
+  // Un salto en este contador significa que el modelo está inventando ids, y
+  // eso es señal de degradación del prompt o del modelo, no ruido.
+  const discarded = (result.verdicts || []).length - modelVerdicts.length;
+
+  return persist(
+    {
+      subject,
+      counts: {
+        candidates: digests.length,
+        clearedByRule: cleared.length,
+        reviewedByModel: modelVerdicts.length,
+        notReviewed: notReviewed.length,
+        discardedUngrounded: discarded,
+      },
+      verdicts: [...cleared, ...modelVerdicts].sort(byRisk),
+      not_reviewed: notReviewed.map((d) => ({ entity_id: d.entity_id, name: d.name })),
+      usage: {
+        model,
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        cache_read_input_tokens: usage.cache_read_input_tokens || 0,
+        cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
+        estimated_cost_usd: costUsd,
+      },
     },
-    verdicts: [...cleared, ...modelVerdicts].sort(byRisk),
-    not_reviewed: notReviewed.map((d) => ({ entity_id: d.entity_id, name: d.name })),
-    usage: {
-      model,
-      input_tokens: usage.input_tokens,
-      output_tokens: usage.output_tokens,
-      cache_read_input_tokens: usage.cache_read_input_tokens || 0,
-      cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
-      estimated_cost_usd: costUsd,
-    },
-  };
+    { sent },
+    deps
+  );
 }
 
 module.exports = { screenSubject, SYSTEM_PROMPT, VERDICT_SCHEMA };

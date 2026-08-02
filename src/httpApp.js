@@ -110,7 +110,8 @@ function createApp() {
 
     try {
       const collection = getCollection(COLLECTION_NAME);
-      res.json(await screenSubject(collection, subject));
+      const auditCollection = getCollection(COLLECTIONS.SCREENING_AUDIT);
+      res.json(await screenSubject(collection, subject, { auditCollection, requestId: req.id }));
     } catch (err) {
       serverError(res, req, 'la adjudicación', err);
     }

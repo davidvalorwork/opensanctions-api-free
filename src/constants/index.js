@@ -10,6 +10,10 @@ const DEFAULT_DB_NAME = process.env.MONGO_DB || 'opensanctions';
 // Colecciones usadas en la aplicación
 const COLLECTIONS = {
   ENTITIES: 'entities',
+  // Registro inmutable de adjudicaciones. Separado de `entities` porque tiene
+  // otro ciclo de vida: las entidades se reemplazan en cada carga de listas, y
+  // el registro de decisiones no se toca nunca.
+  SCREENING_AUDIT: 'screening_audit',
 };
 
 // Puerto HTTP por defecto
