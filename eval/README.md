@@ -4,7 +4,7 @@ Mide si la adjudicación **decide bien**. Las pruebas unitarias miden si el pipe
 **funciona** — son cosas distintas y las dos hacen falta.
 
 ```bash
-node eval/run.js                       # todos los casos
+node eval/run.js                       # los 15 casos
 node eval/run.js --tag homonym         # una familia
 node eval/run.js --model claude-sonnet-5
 ```
@@ -98,7 +98,5 @@ de analista, no de ingeniero.
 
 ## Qué falta
 
-- Casos adversariales de inyección de prompt desde el campo `name` — el adversario controla ese
-  campo por diseño
-- Más volumen: 12 casos detectan roturas grandes, no regresiones sutiles. El objetivo son 50-100
+- Más volumen: 15 casos detectan roturas grandes, no regresiones sutiles. El objetivo son 50-100
 - Comparación entre modelos en una sola corrida, para decidir el ruteo por dificultad con datos

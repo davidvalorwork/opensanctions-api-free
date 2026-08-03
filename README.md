@@ -22,7 +22,7 @@ automates it — and, critically for audit, records *why* each call was made.
 }
 ```
 
-## Five design decisions worth reading
+## Six design decisions worth reading
 
 **1. Deterministic filter before spending a token.** An incompatible date of birth is an integer
 comparison, not an inference. Those candidates come back tagged `decided_by: "rule"` having cost
@@ -48,14 +48,40 @@ decision and June's were made under the same criteria.
 If the audit write fails, the request fails. In compliance, a decision that wasn't recorded is a
 decision that didn't happen: it can't be defended, reproduced, or examined.
 
+**6. The attacker writes the input, by design.** In AML screening the name under review is
+declared by the person trying to pass the filter. That makes `subject.name` a textbook prompt
+injection surface, not a hypothetical one.
+
+Two layers. Input is **rejected, not sanitised** — silently altering a name would screen a
+*different* name than the one requested and return "no matches", producing a false negative that
+looks like a valid review and leaves an audit record saying everything went fine. Newlines,
+control characters and angle brackets are refused; accents, apostrophes and non-Latin scripts are
+not, because rejecting `بهروز پارسا راد` would manufacture false negatives of its own.
+
+What survives that — a plain-sentence injection could be somebody's real name — is contained by
+delimiting untrusted content in `<sujeto>` / `<candidatos>` blocks the system prompt declares to
+be data. Three adversarial cases live in the eval set.
+
 Cost per alert is reported on every response — input tokens, cache reads, output tokens and
 estimated USD — because at screening volume it is a business metric, not a footnote.
+
+## Does it decide correctly?
+
+Unit tests prove the pipeline *works*. They say nothing about whether the verdicts are *right*.
+
+```bash
+node eval/run.js                 # 15 labelled cases against the real model
+```
+
+The report does not average errors, because a 90% accuracy figure hides whether the other 10% are
+annoyances or regulatory findings. A cleared true match is `CRÍTICO`; a false positive is `ruido`.
+Only the former fails the run. See [`eval/README.md`](eval/README.md).
 
 ## Running it
 
 ```bash
 npm install
-npm run test:unit                # 35 tests, ~0.2s. No network, no API key, no Mongo.
+npm run test:unit                # 49 tests, ~0.2s. No network, no API key, no Mongo.
 docker compose up                # API on :5001
 ```
 

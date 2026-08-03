@@ -9,6 +9,7 @@ const { searchEntities } = require('./application/searchService');
 const { screenSubject } = require('./application/screeningService');
 const { isLlmEnabled, getModel } = require('./infrastructure/anthropic');
 const { screenGuard } = require('./infrastructure/screenGuard');
+const { validateSubject } = require('./domain/subjectInput');
 const { getCollection } = require('./infrastructure/mongo');
 const { COLLECTIONS } = require('./constants');
 
@@ -107,6 +108,15 @@ function createApp() {
       birthDate: req.body?.birthDate,
       nationality: req.body?.nationality,
     };
+
+    // El nombre lo escribe quien quiere pasar el filtro. Se rechaza en el borde
+    // en vez de sanear: alterar el nombre significaría screenear uno distinto al
+    // pedido y devolver "sin coincidencias" — un falso negativo con aspecto de
+    // revisión válida. Ver domain/subjectInput.js.
+    const check = validateSubject(subject);
+    if (!check.ok) {
+      return res.status(400).json({ error: 'Sujeto no válido', detail: check.error });
+    }
 
     try {
       const collection = getCollection(COLLECTION_NAME);
