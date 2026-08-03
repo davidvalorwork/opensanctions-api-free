@@ -1,7 +1,7 @@
 {
   "name": "opensanctions-api",
   "version": "1.0.0",
-  "description": "API y migración MongoDB para datos Open Sanctions (Follow the Money)",
+  "description": "API y migraci\u00f3n MongoDB para datos Open Sanctions (Follow the Money)",
   "main": "src/server.js",
   "scripts": {
     "migrate": "node scripts/migrate.js",
@@ -10,12 +10,13 @@
     "test": "node scripts/test-search.js",
     "test:unit": "jest",
     "test:all": "jest && node scripts/test-search.js",
-    "lint": "eslint src/ tests/ scripts/",
+    "lint": "eslint src/ tests/ scripts/ eval/",
     "compose:test-db": "docker compose -f docker-compose.test.yml up -d",
     "compose:test-db:down": "docker compose -f docker-compose.test.yml down",
     "backup": "bash scripts/backup-db.sh",
     "restore": "bash scripts/restore-db.sh",
-    "lambda:deploy": "bash lambda/deploy.sh"
+    "lambda:deploy": "bash lambda/deploy.sh",
+    "eval": "node eval/run.js"
   },
   "keywords": [
     "opensanctions",

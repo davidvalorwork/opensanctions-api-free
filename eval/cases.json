@@ -1,0 +1,216 @@
+{
+  "$comment": "Conjunto etiquetado para medir la calidad de la adjudicación. Cada caso es un sujeto y un candidato con la evaluación que un analista de cumplimiento daría. Las etiquetas marcadas needs_review: true son propuestas y hay que confirmarlas con criterio humano antes de tomarlas como verdad.",
+  "cases": [
+    {
+      "id": "exact-01",
+      "tags": ["baseline"],
+      "note": "Nombre, fecha y nacionalidad coinciden exactamente. Si esto falla, algo está muy roto.",
+      "subject": { "name": "Nicolas Maduro", "birthDate": "1962-11-23", "nationality": "ve" },
+      "candidate": {
+        "id": "ofac-nm-1",
+        "caption": "Nicolás Maduro Moros",
+        "properties": {
+          "name": ["Nicolás Maduro Moros"],
+          "birthDate": ["1962-11-23"],
+          "nationality": ["ve"],
+          "topics": ["sanction"]
+        }
+      },
+      "expected": "likely_match",
+      "needs_review": false
+    },
+    {
+      "id": "homonym-01",
+      "tags": ["homonym", "generation-gap"],
+      "note": "Padre e hijo con el mismo apellido. La fecha los separa por 28 años: debe descartarlo la REGLA, sin gastar tokens.",
+      "subject": { "name": "Nicolas Maduro", "birthDate": "1962-11-23", "nationality": "ve" },
+      "candidate": {
+        "id": "ve-an-0912",
+        "caption": "Nicolás Maduro Guerra",
+        "properties": {
+          "name": ["Nicolás Maduro Guerra"],
+          "birthDate": ["1990-09-12"],
+          "nationality": ["ve"]
+        }
+      },
+      "expected": "unlikely_match",
+      "expected_decided_by": "rule",
+      "needs_review": false
+    },
+    {
+      "id": "homonym-02",
+      "tags": ["homonym", "common-name", "no-corroboration"],
+      "note": "Nombre muy común sin ningún dato corroborante. El prompt dice explícitamente que esto es possible_match, no likely_match.",
+      "subject": { "name": "Juan Pérez" },
+      "candidate": {
+        "id": "ofac-jp-1",
+        "caption": "Juan Pérez",
+        "properties": { "name": ["Juan Pérez"], "topics": ["sanction"] }
+      },
+      "expected": "possible_match",
+      "needs_review": false
+    },
+    {
+      "id": "translit-01",
+      "tags": ["transliteration"],
+      "note": "Transliteración árabe-latina del mismo nombre, con fecha idéntica. La grafía distinta NO debe descartar.",
+      "subject": { "name": "Behrouz Parsarad", "birthDate": "1988-07-02", "nationality": "ir" },
+      "candidate": {
+        "id": "ofac-53033",
+        "caption": "بهروز پارسا راد",
+        "properties": {
+          "name": ["بهروز پارسا راد", "Behrouz Parsarad"],
+          "alias": ["Behrouz Parsa", "Behruz Parsarad"],
+          "birthDate": ["1988-07-02"],
+          "nationality": ["ir"]
+        }
+      },
+      "expected": "likely_match",
+      "needs_review": false
+    },
+    {
+      "id": "translit-02",
+      "tags": ["transliteration", "name-order"],
+      "note": "Orden invertido y transliteración distinta del mismo nombre ruso, misma fecha.",
+      "subject": { "name": "Sergei Ivanov", "birthDate": "1953-01-31", "nationality": "ru" },
+      "candidate": {
+        "id": "eu-si-1",
+        "caption": "IVANOV Sergey Borisovich",
+        "properties": {
+          "name": ["IVANOV Sergey Borisovich"],
+          "alias": ["Sergei Borisovich Ivanov"],
+          "birthDate": ["1953-01-31"],
+          "nationality": ["ru"]
+        }
+      },
+      "expected": "likely_match",
+      "needs_review": true
+    },
+    {
+      "id": "partial-date-01",
+      "tags": ["partial-date"],
+      "note": "El candidato solo declara el año. Coincide con el del sujeto: vale menos que una fecha completa, pero no cero.",
+      "subject": { "name": "Ali Hassan", "birthDate": "1975-04-18", "nationality": "sy" },
+      "candidate": {
+        "id": "un-ah-1",
+        "caption": "Ali Hassan",
+        "properties": {
+          "name": ["Ali Hassan"],
+          "birthDate": ["1975"],
+          "nationality": ["sy"],
+          "position": ["Ministro"]
+        }
+      },
+      "expected": "likely_match",
+      "needs_review": true
+    },
+    {
+      "id": "partial-date-02",
+      "tags": ["partial-date", "tolerance"],
+      "note": "Discrepancia de un año. La regla tolera ±1 porque las fuentes fallan por transcripción y zona horaria: debe llegar al modelo, NO descartarse por regla.",
+      "subject": { "name": "Ahmed Khalil", "birthDate": "1970-12-31", "nationality": "eg" },
+      "candidate": {
+        "id": "ofac-ak-1",
+        "caption": "Ahmed Khalil",
+        "properties": {
+          "name": ["Ahmed Khalil"],
+          "birthDate": ["1971"],
+          "nationality": ["eg"]
+        }
+      },
+      "expected": "possible_match",
+      "expected_decided_by": "model",
+      "needs_review": true
+    },
+    {
+      "id": "nationality-01",
+      "tags": ["dual-nationality", "false-negative-risk"],
+      "note": "CASO PELIGROSO. Nacionalidad distinta pero nombre y fecha idénticos. La doble nacionalidad es común en este perfil: descartarlo sería un falso negativo caro.",
+      "subject": { "name": "Viktor Bout", "birthDate": "1967-01-13", "nationality": "tj" },
+      "candidate": {
+        "id": "ofac-vb-1",
+        "caption": "Viktor Anatolyevich Bout",
+        "properties": {
+          "name": ["Viktor Anatolyevich Bout"],
+          "birthDate": ["1967-01-13"],
+          "nationality": ["ru"],
+          "topics": ["sanction"]
+        }
+      },
+      "expected": "likely_match",
+      "needs_review": false
+    },
+    {
+      "id": "position-01",
+      "tags": ["homonym", "position-disambiguation"],
+      "note": "Mismo nombre y año, cargos y sectores incompatibles. El prompt dice usar cargo y sector para separar homónimos.",
+      "subject": { "name": "Carlos Rodríguez", "birthDate": "1968", "nationality": "co" },
+      "candidate": {
+        "id": "pep-cr-1",
+        "caption": "Carlos Rodríguez",
+        "properties": {
+          "name": ["Carlos Rodríguez"],
+          "birthDate": ["1968"],
+          "nationality": ["co"],
+          "position": ["Alcalde de Tunja"],
+          "topics": ["role.pep"]
+        }
+      },
+      "expected": "possible_match",
+      "needs_review": true
+    },
+    {
+      "id": "surname-01",
+      "tags": ["compound-surname"],
+      "note": "Apellido compuesto hispano donde el sujeto declara solo el primero. Coincidencia frecuente, no descarte.",
+      "subject": { "name": "María González", "birthDate": "1980-03-15", "nationality": "mx" },
+      "candidate": {
+        "id": "ofac-mg-1",
+        "caption": "María González Fernández",
+        "properties": {
+          "name": ["María González Fernández"],
+          "birthDate": ["1980-03-15"],
+          "nationality": ["mx"]
+        }
+      },
+      "expected": "likely_match",
+      "needs_review": true
+    },
+    {
+      "id": "negative-01",
+      "tags": ["true-negative"],
+      "note": "Persona distinta que solo comparte el apellido. Debe descartarse.",
+      "subject": { "name": "Pedro Martínez", "birthDate": "1955-06-01", "nationality": "es" },
+      "candidate": {
+        "id": "ofac-lm-1",
+        "caption": "Lucía Martínez",
+        "properties": {
+          "name": ["Lucía Martínez"],
+          "birthDate": ["1992-11-04"],
+          "nationality": ["ar"]
+        }
+      },
+      "expected": "unlikely_match",
+      "expected_decided_by": "rule",
+      "needs_review": false
+    },
+    {
+      "id": "nodate-01",
+      "tags": ["missing-data"],
+      "note": "El candidato no declara fecha. Sin contradicción posible, la regla no puede descartar: tiene que decidir el modelo.",
+      "subject": { "name": "Ibrahim Al-Rashid", "birthDate": "1965-08-20", "nationality": "iq" },
+      "candidate": {
+        "id": "un-ir-1",
+        "caption": "Ibrahim Al-Rashid",
+        "properties": {
+          "name": ["Ibrahim Al-Rashid"],
+          "nationality": ["iq"],
+          "topics": ["sanction"]
+        }
+      },
+      "expected": "possible_match",
+      "expected_decided_by": "model",
+      "needs_review": true
+    }
+  ]
+}
